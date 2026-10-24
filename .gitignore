@@ -64,6 +64,7 @@ doc/*.snm
 doc/*.vrb
 doc/*.lof
 doc/*.lot
+doc/pdfltex.hs
 
 # Explicitly keep compiled PDF manifest
 !doc/taxide.pdf

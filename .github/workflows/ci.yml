@@ -72,17 +72,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Haskell (for pdfltex.hs runner)
-        uses: haskell-actions/setup@v2
-        with:
-          ghc-version: '9.10.3'
-          cabal-version: '3.12.1.0'
-
       - name: Pull TeXLive Container
         run: docker pull texlive/texlive:latest-medium
 
       - name: Compile Manifesto PDF
-        run: runhaskell doc/pdfltex.hs doc/taxide.tex
+        run: |
+          docker run --rm -v "$PWD/doc:/work" -w /work texlive/texlive:latest-medium pdflatex -interaction=nonstopmode -halt-on-error taxide.tex
+          docker run --rm -v "$PWD/doc:/work" -w /work texlive/texlive:latest-medium pdflatex -interaction=nonstopmode -halt-on-error taxide.tex
 
       - name: Upload PDF Artifact
         uses: actions/upload-artifact@v4
