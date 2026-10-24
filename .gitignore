@@ -1,0 +1,129 @@
+# ==============================================================================
+# TAXIDE - Master .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Haskell & Cabal Build Artifacts
+# ------------------------------------------------------------------------------
+dist-newstyle/
+dist/
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.project.local
+cabal.project.local~
+cabal.project.freeze
+.ghc.environment.*
+
+# GHC Object Files & Interfaces
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+*.p_o
+*.p_hi
+*.dump-*
+
+# Profiling & Coverage Metrics
+*.prof
+*.hp
+*.ps
+*.tix
+.hpc/
+
+# ------------------------------------------------------------------------------
+# 2. Haskell Language Server & IDE Tooling
+# ------------------------------------------------------------------------------
+.hie/
+.hls/
+.bloop/
+.metals/
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*.swn
+*~
+.#*
+\#*#
+
+# ------------------------------------------------------------------------------
+# 3. TeX / LaTeX Documentation Artifacts
+# ------------------------------------------------------------------------------
+doc/*.aux
+doc/*.log
+doc/*.out
+doc/*.toc
+doc/*.synctex.gz
+doc/*.fls
+doc/*.fdb_latexmk
+doc/*.bbl
+doc/*.blg
+doc/*.nav
+doc/*.snm
+doc/*.vrb
+doc/*.lof
+doc/*.lot
+
+# Explicitly keep compiled PDF manifest
+!doc/taxide.pdf
+
+# ------------------------------------------------------------------------------
+# 4. Phylogenetic & Systematic Intermediate Files
+# ------------------------------------------------------------------------------
+*.tnt.tmp
+*.mcmc
+*.trprobs
+*.parts
+*.ckp
+*.ckp.gz
+*.tree.tmp
+*.nex.tmp
+*.bak
+*.tmp
+
+# ------------------------------------------------------------------------------
+# 5. Scientific Databases & Heavy / Sensitive Data
+# ------------------------------------------------------------------------------
+data/graph.db/
+data/graph/
+data/private/
+data/raw/*.fasta.gz
+data/raw/*.bam
+!data/raw/.gitkeep
+*.h5.tmp
+
+# ------------------------------------------------------------------------------
+# 6. Data Science Scripting Environments (Python / R)
+# ------------------------------------------------------------------------------
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+.ipynb_checkpoints/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+
+# ------------------------------------------------------------------------------
+# 7. Operating System Artifacts & Secrets
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.env
+.env.*
+!*.env.example
+
+# ------------------------------------------------------------------------------
+# 8. Test Reports & Benchmarks
+# ------------------------------------------------------------------------------
+doc/taxide-delta-tests.txt
+doc/taxide-core-properties.txt
+benchmarks/*.html
+benchmarks/*.csv

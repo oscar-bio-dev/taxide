@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  haskell-ci:
+    name: GHC ${{ matrix.ghc }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        ghc: [ '9.10.3', '9.8.4' ]
+        cabal: [ '3.12.1.0' ]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell Environment
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
+
+      - name: Cache Cabal Dependencies & Build Artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ matrix.cabal }}-${{ hashFiles('**/*.cabal', 'cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ matrix.cabal }}-
+
+      - name: Update Cabal Package Index
+        run: cabal update
+
+      - name: Configure Multi-Package Workspace
+        run: cabal configure --enable-tests --enable-benchmarks --test-show-details=streaming
+
+      - name: Build Dependencies
+        run: cabal build all --only-dependencies
+
+      - name: Build All Packages & Executables
+        run: cabal build all
+
+      - name: Run Test Suites (Unit, Invariants & Hedgehog Property Tests)
+        run: cabal test all --test-show-details=streaming
+
+      - name: Validate Example DELTA Dataset (taxide-fmt --check)
+        run: cabal run taxide-fmt -- -i examples/craspedacusta --check
+
+      - name: Verify Idempotent Canonical Formatting
+        run: |
+          cabal run taxide-fmt -- -i examples/craspedacusta -o ./ci_canonical
+          cabal run taxide-fmt -- -i ./ci_canonical --check
+
+  latex-docs:
+    name: Compile & Verify LaTeX Formal Manifesto
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell (for pdfltex.hs runner)
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.10.3'
+          cabal-version: '3.12.1.0'
+
+      - name: Pull TeXLive Container
+        run: docker pull texlive/texlive:latest-medium
+
+      - name: Compile Manifesto PDF
+        run: runhaskell doc/pdfltex.hs doc/taxide.tex
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taxide-manifesto-pdf
+          path: doc/taxide.pdf
+          if-no-files-found: error

@@ -1,0 +1,6 @@
+packages:
+    taxide-core/
+    taxide-delta/
+
+tests: True
+benchmarks: True

@@ -1,0 +1,60 @@
+# ==============================================================================
+# TAXIDE - Git Attributes & Repository Normalization
+# ==============================================================================
+
+# Default: Automatically normalize all text files to LF on checkout and commit
+* text=auto eol=lf
+
+# ------------------------------------------------------------------------------
+# Haskell Source Code & Package Specifications
+# ------------------------------------------------------------------------------
+*.hs                    text eol=lf diff=haskell
+*.lhs                   text eol=lf diff=haskell
+*.cabal                 text eol=lf
+*.project               text eol=lf
+hie.yaml                text eol=lf
+
+# ------------------------------------------------------------------------------
+# Documentation, Configuration & Manifests
+# ------------------------------------------------------------------------------
+*.md                    text eol=lf
+*.tex                   text eol=lf diff=tex
+*.yaml                  text eol=lf
+*.yml                   text eol=lf
+*.json                  text eol=lf
+*.toml                  text eol=lf
+*.sh                    text eol=lf
+*.bash                  text eol=lf
+LICENSE                 text eol=lf
+CITATION.cff            text eol=lf
+CODE_OF_CONDUCT.md      text eol=lf
+CONTRIBUTING.md         text eol=lf
+
+# ------------------------------------------------------------------------------
+# Taxonomic DELTA Formats (Human-readable plain text)
+# ------------------------------------------------------------------------------
+SPECS                   text eol=lf
+CHARS                   text eol=lf
+ITEMS                   text eol=lf
+CNOTES                  text eol=lf
+TONAT                   text eol=lf
+TOKEY                   text eol=lf
+TODIS                   text eol=lf
+
+# ------------------------------------------------------------------------------
+# Binary Formats (Preserve exact bytes, prevent git smudge/clean)
+# ------------------------------------------------------------------------------
+*.pdf                   binary
+*.zip                   binary
+*.tar.gz                binary
+*.h5                    binary
+*.png                   binary
+*.jpg                   binary
+*.jpeg                  binary
+*.ico                   binary
+
+# ------------------------------------------------------------------------------
+# GitHub Linguist Overrides (Ensure statistics reflect Haskell pure architecture)
+# ------------------------------------------------------------------------------
+doc/*.tex               linguist-documentation
+examples/**             linguist-documentation

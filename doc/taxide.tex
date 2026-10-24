@@ -1,0 +1,360 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Paquetes Tipográficos y Matemáticos Fundamentales ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{array}
+
+% --- Configuración de Enlaces e Hipertexto ---
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=teal,
+    citecolor=cyan,
+    filecolor=magenta,
+    urlcolor=blue,
+    pdftitle={Manifiesto TAXIDE y Fundamentos Matemáticos},
+    pdfauthor={TAXIDE Architectural Working Group},
+    pdfsubject={Bioinformática, Cladística y Tipado Funcional},
+    pdfkeywords={Haskell, Cladistics, Taxonomy as Code, DELTA, Fitch, Sankoff, Gower}
+}
+
+% --- Configuración para Listados de Código Haskell ---
+\definecolor{gruvboxbg}{RGB}{40, 40, 40}
+\definecolor{gruvboxfg}{RGB}{235, 219, 178}
+\definecolor{gruvboxgreen}{RGB}{184, 187, 38}
+\definecolor{gruvboxblue}{RGB}{131, 165, 152}
+\definecolor{gruvboxorange}{RGB}{254, 128, 25}
+
+\lstset{
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{gruvboxorange}\bfseries,
+    commentstyle=\color{gruvboxblue}\itshape,
+    stringstyle=\color{gruvboxgreen},
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{white},
+    tabsize=2,
+    showstringspaces=false
+}
+
+% --- Teoremas y Definiciones ---
+\theoremstyle{definition}
+\newtheorem{definicion}{Definición}[section]
+\newtheorem{propiedad}{Propiedad}[section]
+
+% --- Metadatos del Documento ---
+\title{\textbf{\Huge TAXIDE: Taxonomía como Código}\\
+\Large Manifiesto de Ingeniería, Seguridad Tipada y Fundamentos Matemáticos para la Descripción Biológica y Cladística}
+\author{\textbf{TAXIDE Core Architecture \& Scientific Computing Team}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Durante más de cuatro décadas, la sistemática biológica ha dependido de formatos y herramientas de procesamiento de datos morfológicos legados, notablemente el estándar DELTA (DEscription Language for TAxonomy) y su constelación de ejecutables enlazados de manera frágil (CONFOR, KEY, DIST). En este trabajo presentamos el manifiesto fundacional de \textbf{TAXIDE} (\textit{Taxonomic Integrated Development Environment}), un entorno de cómputo formal escrito íntegramente en Haskell puro. TAXIDE establece el paradigma de \textbf{«Taxonomía como Código»}, formalizando las descripciones biológicas mediante sistemas de tipos algebraicos inmutables, analizadores combinatorios de alta precisión y un motor analítico en memoria libre de efectos secundarios. Presentamos la justificación matemática y algorítmica para el enrutamiento exhaustivo de caracteres hacia los algoritmos de Fitch, Sankoff/Wagner y el coeficiente de similitud de Gower, garantizando invariantes biológicas verificadas por el sistema de tipos antes de cualquier inferencia filogenética.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =========================================================================
+\section{Manifiesto TAXIDE: Taxonomía como Código}
+% =========================================================================
+
+\subsection{El Ocaso de los Sistemas Heredados}
+En la década de 1970, el estándar CSIRO DELTA introdujo una innovación indispensable: permitir a los taxónomos registrar matrices de caracteres de forma legible para humanos y procesable por ordenadores primigenios. No obstante, las limitaciones computacionales de dicha era impusieron una arquitectura fragmentada y proclive a la corrupción:
+\begin{enumerate}
+    \item \textbf{Fragmentación de Archivos Planos:} Una única matriz taxonómica se disgrega en múltiples archivos arbitrarios (\texttt{SPECS}, \texttt{CHARS}, \texttt{ITEMS}, \texttt{CNOTES}), acompañados de scripts directivos impermeables (\texttt{TONAT}, \texttt{TOKEY}, \texttt{TODIS}). La pérdida de sincronía entre el recuento de caracteres de \texttt{SPECS} y las definiciones en \texttt{CHARS} anula la integridad del proyecto.
+    \item \textbf{Envoltorios Frágiles y Procesos Secundarios:} Las herramientas actuales (como \textit{Free Delta Editor}) actúan como meros envoltorios de interfaz gráfica que comprimen textos en ficheros \texttt{.dtz}, vuelcan scripts transitorios en el disco y orquestan binarios monolíticos precompilados de 16/32 bits (\texttt{CONFOR}, \texttt{KEY}, \texttt{DIST}) mediando archivos binarios intermedios (\texttt{KCHARS}, \texttt{KITEMS}).
+    \item \textbf{Ambigüedad Gramatical Inadmisible:} DELTA fue concebido como una taquigrafía humana con reglas contextuales: directivas donde sólo tres letras son significativas (e.g., \texttt{*NUMBER OF CHARACTERS} $\equiv$ \texttt{*NUM OF CHA}), el carácter \texttt{/} ejerciendo como operador lógico \textit{OR}, terminador de definición o carácter literal, y comentarios entre corchetes angulares \texttt{<...>} anidados sin delimitadores formales.
+\end{enumerate}
+
+\subsection{La Declaración de Principios de TAXIDE}
+TAXIDE refunda la computación morfológica sobre las bases del rigor formal de la ciencia de la computación contemporánea:
+
+\begin{itemize}
+    \item \textbf{1. Taxonomía como Código (Taxonomy as Code):} Las hipótesis taxonómicas, descripciones fenotípicas y matrices cladísticas deben modelarse con la misma rigurosidad que un lenguaje de programación moderno: con gramáticas formales libres de ambigüedad, análisis léxico determinista, chequeo de tipos estático y linters en tiempo de edición.
+    \item \textbf{2. Inmutabilidad y Cómputo Puro:} El disco duro no debe ser el canal de comunicación entre etapas algorítmicas. TAXIDE elimina todo ejecutable externo; CONFOR, KEY y DIST se sustituyen por funciones matemáticas puras que transforman el Árbol de Sintaxis Abstracta (AST) en la memoria RAM con complejidad asintótica demostrable.
+    \item \textbf{3. Invariantes Biológicas Garantizadas por Construcción:} Estados inválidos —tales como caracteres dependientes poseyendo valores activos cuando su controlador biológico los declara inaplicables— deben ser irrepresentables o rechazados en tiempo de análisis sintáctico y compilación lógica.
+    \item \textbf{4. Interoperabilidad Nativa Multi-Objetivo:} Una única fuente de verdad morfológica debe proyectarse isomórficamente hacia formatos cladísticos estándar (NEXUS, TNT), publicaciones botánicas/zoológicas en prosa natural (Markdown, HTML), bases de datos espaciales (JSON/PostGIS) y tensores binarios de alta velocidad (HDF5/AVX-512).
+\end{itemize}
+
+% =========================================================================
+\section{Justificación Arquitectónica: Tipos Algebraicos y Seguridad Funcional}
+% =========================================================================
+
+TAXIDE ha sido diseñado en el lenguaje funcional puro \textbf{Haskell}. La elección no es estética, sino una necesidad de modelado ontológico: la teoría de tipos algebraicos permite capturar la heterogeneidad biológica con absoluta precisión formal.
+
+\subsection{Tipos de Caracteres como Tipos de Datos Algebraicos (ADTs)}
+Una matriz morfológica no es una cuadrícula homogénea de números reales ni una simple cadena de caracteres. La biología exige cinco dimensiones fenotípicas fundamentales, modeladas en TAXIDE mediante tipos suma y producto:
+
+\begin{lstlisting}[language=Haskell, caption={Modelado Formal de Atributos y Pseudo-valores en TAXIDE}]
+data PseudoValue = Unknown | Inapplicable | Variable
+  deriving (Eq, Show, Generic, NFData)
+
+data CharacterType
+  = UnorderedMultistate   -- UM: Estados cualitativos sin relacion metrica
+  | OrderedMultistate     -- OM: Estados con relacion ordinal/lineal
+  | IntegerNumeric        -- IN: Variables discretas de conteo
+  | RealNumeric           -- RN: Mediciones continuas con unidad dimensional
+  | FreeText              -- TE: Descripciones no computables morfologicamente
+  deriving (Eq, Show, Generic, NFData)
+
+data Attribute
+  = AttrPseudo !PseudoValue
+  | AttrMultistate !(Set Word8) !(Maybe Text)
+  | AttrQuantitative !(StatRange Double) !(Maybe Text)
+  | AttrLiteral !Text
+  deriving (Eq, Show, Generic, NFData)
+\end{lstlisting}
+
+\subsection{Enrutamiento Determinista de Algoritmos}
+Gracias a la correspondencia unívoca entre la clasificación del carácter en el AST y su tipo algebraico, el motor analítico de TAXIDE (\texttt{tide-engine}) elimina el uso de condicionales imperativos frágiles en tiempo de ejecución. La selección del núcleo computacional se rige por un despacho formal exhaustivo:
+\begin{itemize}
+    \item Caracteres \texttt{UnorderedMultistate (UM)} $\implies$ Enrutados al \textbf{Algoritmo de Fitch} (optimización de parsimonia mediante intersecciones conjuntistas en $O(1)$ de bits).
+    \item Caracteres \texttt{OrderedMultistate (OM)} $\implies$ Enrutados al \textbf{Algoritmo de Sankoff/Wagner} (programación dinámica sobre árboles con matrices de costo aditivas).
+    \item Matrices Mixtas (\texttt{UM}, \texttt{OM}, \texttt{IN}, \texttt{RN}) $\implies$ Enrutadas al \textbf{Coeficiente de Gower} (distancias fenéticas normalizadas por rango).
+\end{itemize}
+
+% =========================================================================
+\section{Fundamentos Matemáticos y Algorítmicos}
+% =========================================================================
+
+\subsection{Algoritmo de Fitch (Caracteres Multiestado Desordenados - UM)}
+Para caracteres discretos desordenados, cualquier transformación fenotípica entre un estado $a$ y un estado $b$ ($a \neq b$) supone un único paso evolutivo independiente de la etiqueta asignada. Walter M. Fitch (1971) formuló el algoritmo exacto para encontrar la longitud mínima de parsimonia en un árbol filogenético bifurcado en tiempo lineal respecto al número de taxones.
+
+\begin{definicion}[Operador de Asignación Ancestral de Fitch]
+Sea $T = (V, E)$ un árbol filogenético con raíz. Para un carácter desordenado $k$, cada nodo terminal (hoja) $u$ tiene asignado el conjunto de estados observados $S_u \subseteq \mathcal{S}_k$. 
+
+Para un nodo ancestral interno $A$ con hijo izquierdo $L$ e hijo derecho $R$, cuyos conjuntos de estados candidatos son $S_L$ y $S_R$ respectivamente, el conjunto de estados asignado a $A$, denotado $S_A$, y el incremento de costo local $c_A$ se definen formalmente como:
+\begin{equation}
+S_A = \begin{cases} 
+S_L \cap S_R & \text{si } S_L \cap S_R \neq \emptyset \quad (\text{costo extra } c_A = 0) \\
+S_L \cup S_R & \text{si } S_L \cap S_R = \emptyset \quad (\text{costo extra } c_A = 1)
+\end{cases}
+\end{equation}
+\end{definicion}
+
+La longitud de parsimonia global para el carácter $k$ sobre la topología $T$ es la suma acumulada de las penalizaciones de unión:
+\begin{equation}
+L_k(T) = \sum_{A \in V_{\text{interno}}} \mathbb{I}(S_L \cap S_R = \emptyset)
+\end{equation}
+donde $\mathbb{I}(\cdot)$ es la función indicatriz de Iverson.
+
+\begin{propiedad}[Implementación Funcional Pura]
+En TAXIDE, debido a que el estándar DELTA admite estados multiestado entre 1 y 64, $S_u$ no requiere memoria dinámica en el Heap; se modela como un entero sin signo de 64 bits (\texttt{Word64}), donde la pertenencia del estado $s_i$ es el $i$-ésimo bit. Las operaciones de unión e intersección se reducen a primitivas de hardware vectorizables en tiempo $O(1)$:
+\begin{align*}
+S_L \cap S_R &\iff \texttt{S\_L .\&. S\_R} \\
+S_L \cup S_R &\iff \texttt{S\_L .|. S\_R} \\
+S_L \cap S_R \neq \emptyset &\iff \texttt{(S\_L .\&. S\_R) /= 0}
+\end{align*}
+\end{propiedad}
+
+% -------------------------------------------------------------------------
+\subsection{Algoritmo de Sankoff/Wagner (Caracteres Multiestado Ordenados - OM)}
+% -------------------------------------------------------------------------
+Cuando un carácter biológico presenta una trayectoria ontogenética o morfogenética ordenada ($1 \leftrightarrow 2 \leftrightarrow 3$), la transición $1 \to 3$ no puede ocurrir de forma directa sin atravesar el estado intermedio 2. Asignar un costo uniforme de 1 penalizaría incorrectamente hipótesis evolutivas coherentes. 
+
+David Sankoff (1975) generalizó la parsimonia a matrices de costos de transición arbitrarias mediante programación dinámica sobre el grafo del árbol.
+
+\begin{definicion}[Ecuación de Bellman de Parsimonia de Sankoff]
+Sea $\mathcal{S} = \{1, 2, \dots, m\}$ el conjunto ordenado de estados posibles para el carácter. Sea $w(i, j) \ge 0$ la función de costo de transición o matriz de paso (\textit{step matrix}) que cuantifica el costo de mutación del estado $i$ al estado $j$. En parsimonia de Wagner aditiva estándar:
+\begin{equation}
+w(i, j) = |i - j|
+\end{equation}
+
+Sea $C_u(i)$ el costo mínimo acumulado del subárbol que desciende del nodo $u$, condicionado a que el nodo $u$ adopte el estado $i$.
+
+Para un nodo hoja terminal $u$ con estado observado $s \in \mathcal{S}$:
+\begin{equation}
+C_u(i) = \begin{cases} 
+0 & \text{si } i = s \text{ (o si } i \in S_{\text{polimórfico}}\text{)} \\
+\infty & \text{si } i \neq s
+\end{cases}
+\end{equation}
+
+Para un nodo interno ancestro $A$ con hijos izquierdo $L$ y derecho $R$, el costo condicional del estado $i$ satisface la relación de recurrencia:
+\begin{equation}
+C_A(i) = \min_{j \in \mathcal{S}} \Big[ C_L(j) + w(i, j) \Big] + \min_{k \in \mathcal{S}} \Big[ C_R(k) + w(i, k) \Big]
+\end{equation}
+\end{definicion}
+
+El costo de parsimonia total del árbol para dicho carácter corresponde a la mínima energía en el nodo raíz:
+\begin{equation}
+L_k^{\text{Sankoff}}(T) = \min_{i \in \mathcal{S}} C_{\text{raíz}}(i)
+\end{equation}
+
+En TAXIDE, esta recurrencia se implementa de manera puramente funcional mediante un pliegue post-orden (\textit{tree catamorphism}) parametrizado sobre vectores inmutables sin encajonar (\texttt{Data.Vector.Unboxed Double}).
+
+% -------------------------------------------------------------------------
+\subsection{Coeficiente de Similitud de Gower (Distancia Fenética)}
+% -------------------------------------------------------------------------
+Para garantizar compatibilidad total con el módulo heredado \texttt{DIST} de DELTA y proveer matrices de entrada a algoritmos de agrupamiento fenético (UPGMA, Neighbor-Joining) y ordenación (PCoA), TAXIDE implementa el coeficiente general de similitud propuesto por John C. Gower (1971).
+
+La potencia matemática del coeficiente de Gower radica en su capacidad de procesar matrices heterogéneas que combinan variables cualitativas dicotómicas, multiestado desordenadas y variables numéricas continuas con dimensiones físicas dispares, tolerando ausencias biológicas de datos (\textit{Unknown} y \textit{Inapplicable}).
+
+\begin{definicion}[Similitud General de Gower]
+Sean dos taxones u OTUs (\textit{Operational Taxonomic Units}) $i$ y $j$, descritos a lo largo de $n$ caracteres morfológicos. La similitud global $S_{ij}$ se define formalmente como:
+\begin{equation}
+S_{ij} = \frac{\sum_{k=1}^n w_{ijk} \, s_{ijk}}{\sum_{k=1}^n w_{ijk}}
+\end{equation}
+donde:
+\begin{itemize}
+    \item $s_{ijk} \in [0, 1]$ representa la similitud parcial entre los taxones $i$ y $j$ para el carácter $k$.
+    \item $w_{ijk} \in \{0, 1\}$ es un factor de ponderación binario que indica la validez de la comparación.
+\end{itemize}
+\end{definicion}
+
+\subsubsection{Cálculo de Similitudes Parciales \texorpdfstring{($s_{ijk}$)}{(s\_ijk)} y Pesos \texorpdfstring{($w_{ijk}$)}{(w\_ijk)}}
+El valor de $s_{ijk}$ y $w_{ijk}$ queda estrictamente determinado por el tipo algebraico del carácter $k$ en el AST:
+
+\begin{enumerate}
+    \item \textbf{Caracteres Cualitativos Multiestado (UM, OM) y Binarios:}
+    \begin{equation}
+    s_{ijk} = \begin{cases}
+    1 & \text{si } x_{ik} = x_{jk} \quad (\text{coincidencia de estados}) \\
+    0 & \text{si } x_{ik} \neq x_{jk}
+    \end{cases}
+    \end{equation}
+    Si el carácter $k$ toma el pseudo-valor \texttt{Unknown} ('U') o \texttt{Inapplicable} ('-') en cualquiera de los dos taxones, la comparación biológica carece de sentido:
+    \begin{equation}
+    w_{ijk} = 0 \quad (\text{se excluye el carácter del denominador})
+    \end{equation}
+    En cualquier otro caso, $w_{ijk} = 1$.
+
+    \item \textbf{Caracteres Numéricos Cuantitativos (IN, RN):}
+    Para variables continuas o de conteo, la similitud es proporcional a la cercanía métrica normalizada por el rango total observado:
+    \begin{equation}
+    s_{ijk} = 1 - \frac{|x_{ik} - x_{jk}|}{R_k}
+    \end{equation}
+    donde $R_k$ es el rango de variación del carácter $k$ a través de la totalidad de la muestra taxonómica $\mathcal{T}$:
+    \begin{equation}
+    R_k = \max_{t \in \mathcal{T}} (x_{tk}) - \min_{t \in \mathcal{T}} (x_{tk})
+    \end{equation}
+    Si $R_k = 0$ (carácter invariante), se fija $s_{ijk} = 1$.
+\end{enumerate}
+
+\begin{definicion}[Métrica de Distancia Fenética Derivada]
+A partir de la similitud simétrica de Gower, la distancia fenética complementaria $D_{ij}$ utilizada por TAXIDE en la construcción de dendrogramas se calcula como:
+\begin{equation}
+D_{ij} = 1 - S_{ij} \quad \text{o alternativamente} \quad D_{ij}^{\text{métrica}} = \sqrt{1 - S_{ij}}
+\end{equation}
+Cumpliendo rigurosamente los axiomas métricos de no-negatividad, simetría y desigualdad triangular.
+\end{definicion}
+
+% =========================================================================
+\section{Reglas de Inferencia Lógica y Dependencias en Memoria}
+% =========================================================================
+
+El reemplazo del monolito CONFOR exige formalizar la semántica biológica que DELTA describía de modo informal. En TAXIDE, estas reglas actúan como fases de reducción en un cálculo puro:
+
+\subsection{Grafo Acíclico Dirigido (DAG) de Dependencias}
+Las directivas \texttt{*DEPENDENT CHARACTERS} establecen restricciones de aplicabilidad morfológica (e.g., la forma de las hojas carece de sentido biológico si las hojas están ausentes).
+Formalmente, el sistema de dependencias se modela como una relación funcional sobre el conjunto de caracteres $\mathcal{C}$ y el retículo de estados:
+\begin{equation}
+\mathcal{D} \colon \mathcal{C} \times \mathcal{P}(\mathcal{S}) \to \mathcal{P}(\mathcal{C})
+\end{equation}
+Si el carácter controlador $c \in \mathcal{C}$ adopta un estado $s \in \mathcal{S}_c$ perteneciente al conjunto de inhabilitación, el conjunto de caracteres dependientes $\mathcal{D}(c, s) = \{d_1, d_2, \dots, d_m\}$ es proyectado de manera estricta al pseudo-valor:
+\begin{equation}
+\forall d \in \mathcal{D}(c, s), \quad \text{Attr}(T, d) \coloneqq \texttt{AttrPseudo Inapplicable}
+\end{equation}
+TAXIDE detecta ciclos en tiempo de parsing analizando la matriz de adyacencia de $\mathcal{D}$, impidiendo que existan dependencias circulares mediante validación estática de grafos acíclicos dirigidos (DAGs).
+
+\subsection{Inyección Determinista de Valores Implícitos}
+La directiva \texttt{*IMPLICIT VALUES (c,s:t)} asigna estados por defecto para optimizar la taquigrafía de descripciones:
+\begin{equation}
+\text{Attr}_{\text{resuelto}}(T, c) = \begin{cases}
+s & \text{si el carácter $c$ se omite en la descripción del taxón $T$} \\
+t & \text{si $c$ se declara explícitamente pero sin indicar estado} \\
+\text{Attr}(T, c) & \text{en cualquier otro caso}
+\end{cases}
+\end{equation}
+
+\subsection{Herencia de Variantes Taxonómicas}
+Los ítems variantes (\texttt{\#+}) representan subespecies o morfismos que derivan de un taxón principal (\texttt{\#}). Sea $\mathbf{A}_{\text{base}}$ el mapa de atributos del ítem progenitor y $\mathbf{A}_{\text{var}}$ el mapa de atributos explícitos del ítem variante. La resolución en TAXIDE es una operación de combinación monoidal sobre mapas estrictos (\texttt{Data.Map.Strict}):
+\begin{equation}
+\mathbf{A}_{\text{final}}(\#+\text{Var}) = \mathbf{A}_{\text{var}} \mathbin{\cup_{\text{left}}} \mathbf{A}_{\text{base}}
+\end{equation}
+where los atributos declarados en el ítem variante sobrescriben por la izquierda los atributos ancestrales, preservando la inmutabilidad y la pureza referencial.
+
+% =========================================================================
+\section{Interoperabilidad Biodiversa: Proyección al Estándar Darwin Core Archive (DwC-A)}
+% =========================================================================
+
+\subsection{El Puente entre Morfología Descriptiva y la Infraestructura Global (GBIF)}
+Durante décadas, las matrices taxonómicas morfológicas han permanecido aisladas en formatos legados (como DELTA o NEXUS), desconectadas de las redes federadas de datos biológicos globales. El estándar \textbf{Darwin Core Archive (DwC-A)}, coordinado por el \textit{Biodiversity Information Standards} (TDWG) y adoptado universalmente por la \textit{Global Biodiversity Information Facility} (GBIF), constituye la columna vertebral de la informática de la biodiversidad moderna.
+
+TAXIDE actúa como un compilador y transpilador formal que proyecta de forma biyectiva el conocimiento morfológico capturado en el AST hacia el \textbf{Esquema en Estrella (Star Schema)} de DwC-A, convirtiendo descripciones cualitativas y mediciones cuantitativas en hechos medibles indexables globalmente.
+
+\subsection{Mapeo Formal hacia el Esquema en Estrella (Star Schema)}
+Sea una matriz taxonómica resuelta $\mathcal{M} = (\mathcal{T}, \mathcal{C}, \mathbf{A}_{\text{resuelto}})$, donde $\mathcal{T} = \{T_1, \dots, T_m\}$ es el conjunto de taxones, $\mathcal{C} = \{C_1, \dots, C_n\}$ es el conjunto de caracteres y $\mathbf{A}_{\text{resuelto}}$ es la aplicación de atributos evaluados. La transformación a DwC-A se modela formalmente como una proyección determinista hacia un núcleo central y dos extensiones relacionales:
+
+\begin{align}
+\Phi_{\text{DwC-A}} \colon (\mathcal{T}, \mathcal{C}, \mathbf{A}_{\text{resuelto}}) \longrightarrow \Big( & \mathbf{Core}_{\text{Taxon}}, \, \mathbf{Ext}_{\text{MeasurementOrFact}}, \nonumber \\
+& \mathbf{Ext}_{\text{Description}}, \, \mathbf{Meta}_{\text{XML}}, \, \mathbf{EML}_{\text{XML}} \Big)
+\end{align}
+
+\subsubsection{1. Núcleo Taxonómico: \texttt{taxon.txt} (\texttt{dwc:Taxon})}
+Cada taxón $T_i \in \mathcal{T}$ se proyecta como una entidad taxonómica única en el archivo central \texttt{taxon.txt}:
+\begin{itemize}
+    \item \texttt{dwc:taxonID}: Clave primaria inmutable derivada del identificador o nombre normalizado del taxón.
+    \item \texttt{dwc:scientificName} y \texttt{dwc:scientificNameAuthorship}: TAXIDE descompone automáticamente el nombre del ítem DELTA separando el epíteto formal de la autoría presente en los comentarios angulares (\texttt{<...>}). Por ejemplo:
+    \begin{equation*}
+    \texttt{\# Craspedacusta sowerbyi <Lankester, 1880>/} \implies \begin{cases} 
+    \texttt{dwc:scientificName} = \text{\textit{``Craspedacusta sowerbyi''}} \\
+    \texttt{dwc:scientificNameAuthorship} = \text{``Lankester, 1880''}
+    \end{cases}
+    \end{equation*}
+    \item \texttt{dwc:parentNameUsageID} y \texttt{dwc:taxonRank}: Los ítems variantes (\texttt{\#+}) se clasifican automáticamente como rangos infraespecíficos (\textit{subspecies} o \textit{variety}), vinculándolos inequívocamente con el taxón principal progenitor mediante la relación:
+    \begin{equation}
+    \texttt{dwc:parentNameUsageID}(\#+\text{Var}) = \texttt{dwc:taxonID}(\#\text{Parent})
+    \end{equation}
+\end{itemize}
+
+\subsubsection{2. Extensión de Mediciones y Rasgos: \texttt{measurementorfact.txt} (\texttt{dwc:MeasurementOrFact})}
+La matriz morfológica se descompone en tuplas relacionales de rasgos biológicos para cada celda $(T_i, C_j)$. Los estados no informativos (\texttt{Unknown} 'U' e \texttt{Inapplicable} '-') se omiten por construcción:
+\begin{equation}
+\forall (T_i, C_j) \text{ tal que } \mathbf{A}_{\text{resuelto}}(T_i, C_j) \notin \{\texttt{Unknown}, \texttt{Inapplicable}\} \implies \mathbf{r}_{ij} \in \mathbf{Ext}_{\text{MeasurementOrFact}}
+\end{equation}
+donde cada registro $\mathbf{r}_{ij}$ contiene los siguientes campos normalizados:
+\begin{itemize}
+    \item \texttt{dwc:coreID}: Clave foránea vinculada a \texttt{dwc:taxonID}$(T_i)$.
+    \item \texttt{dwc:measurementType}: Nombre de la característica morfológica extraída de \texttt{charFeature}$(C_j)$ (e.g., \textit{``medusa phase''}, \textit{``leaf length''}).
+    \item \texttt{dwc:measurementValue}:
+      \begin{itemize}
+          \item En caracteres discretos (\texttt{UM}, \texttt{OM}): Descripción textual o código de los estados observados.
+          \item En caracteres cuantitativos (\texttt{IN}, \texttt{RN}): Rango normal o valor central ($\text{n1}-\text{n2}$ o $\text{n}$).
+      \end{itemize}
+    \item \texttt{dwc:measurementUnit}: Proyectado directamente desde \texttt{charUnits}$(C_j)$ (e.g., \textit{``mm''}, \textit{``cm''}, \textit{``m''}).
+    \item \texttt{dwc:measurementRemarks}: Comentarios contextuales del estado y valores extremos absolutos de rangos estadísticos \texttt{StatRange} (e.g., \textit{«(5-) ... (-30)»}).
+\end{itemize}
+
+\subsubsection{3. Extensión de Descripciones Textuales: \texttt{description.txt} (\texttt{gbif:Description})}
+Los caracteres cualitativos de texto libre (\texttt{TE}) y los párrafos descriptivos generados por el motor de síntesis en lenguaje natural se inyectan en la extensión \texttt{description.txt} con el predicado \texttt{dwc:type = 'morphology'}, preservando citas y anotaciones morfológicas complejas.
+
+\subsubsection{4. Empaquetado Determinista en Memoria y Metadatos (\texttt{meta.xml} y \texttt{eml.xml})}
+Para cumplir los estándares de seguridad y evitar operaciones de E/S transitorias en el disco duro:
+\begin{enumerate}
+    \item \textbf{\texttt{meta.xml}:} TAXIDE genera de manera determinista el descriptor XML del esquema en estrella, especificando la codificación UTF-8, delimitadores por tabulación (\texttt{\textbackslash t}) y las URIs ontológicas del TDWG para cada columna.
+    \item \textbf{\texttt{eml.xml}:} Se serializa la estructura inmutable \texttt{DatasetMetadata} en \textit{Ecological Metadata Language} (EML 2.1.1), registrando título, creadores, licencias abiertas (CC-BY o CC0) e información de contacto.
+    \item \textbf{Contenedor ZIP en Memoria:} El archivo final comprimido (\texttt{.zip}) se ensambla íntegramente en la memoria RAM mediante la librería funcional pura \texttt{Codec.Archive.Zip}, generando un flujo binario que se descarga o transmite directamente sin intermediación de ficheros temporales.
+\end{enumerate}
+
+% =========================================================================
+\section{Conclusión y Visión de Futuro}
+% =========================================================================
+TAXIDE culmina la transición de la morfología taxonómica hacia la era del software científico formal. Al abandonar los envoltorios frágiles de ejecutables legados y fundamentar toda la infraestructura sobre tipos algebraicos, evaluación estricta controlada, algoritmos de optimización combinatoria en Haskell y conectividad nativa con la infraestructura global de biodiversidad (DwC-A/GBIF), TAXIDE ofrece a la comunidad biológica una herramienta de precisión matemática, auditabilidad y rendimiento de supercómputo para las próximas décadas.
+
+\end{document}

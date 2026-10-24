@@ -1,0 +1,64 @@
+cabal-version:      3.0
+name:               taxide-core
+version:            0.1.0.0
+synopsis:           Núcleo semántico y tipos algebraicos para matrices taxonómicas
+description:        Tipos de datos algebraicos puros, AST morfológico y fase resuelta para TAXIDE.
+license:            Apache-2.0
+author:             TAXIDE Core Architecture Team
+maintainer:         core@taxide.org
+category:           Bioinformatics, Scientific Computing
+build-type:         Simple
+
+common common-options
+    default-language:   GHC2021
+    default-extensions:
+        StrictData
+        OverloadedStrings
+        DeriveGeneric
+        DeriveAnyClass
+        BangPatterns
+        TypeFamilies
+        GADTs
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+
+library
+    import:             common-options
+    hs-source-dirs:     src
+    exposed-modules:
+        Taxide.Core.Types
+        Taxide.Core.Character
+        Taxide.Core.Item
+        Taxide.Core.Specs
+        Taxide.Core.Invariants
+        Taxide.Core.Diagnostic
+    build-depends:
+        base >= 4.18 && < 5,
+        text >= 2.0,
+        bytestring >= 0.11,
+        containers >= 0.6,
+        vector >= 0.13,
+        deepseq >= 1.4,
+        hashable >= 1.4
+
+test-suite taxide-core-test
+    import:             common-options
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        text,
+        containers,
+        tasty >= 1.4,
+        tasty-hunit >= 0.10,
+        tasty-hedgehog >= 1.4,
+        hedgehog >= 1.2

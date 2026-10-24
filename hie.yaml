@@ -1,0 +1,12 @@
+cradle:
+  cabal:
+    - path: "./taxide-core/src"
+      component: "taxide-core:lib:taxide-core"
+    - path: "./taxide-core/test"
+      component: "taxide-core:test:taxide-core-test"
+    - path: "./taxide-delta/src"
+      component: "taxide-delta:lib:taxide-delta"
+    - path: "./taxide-delta/app"
+      component: "taxide-delta:exe:taxide-fmt"
+    - path: "./taxide-delta/test"
+      component: "taxide-delta:test:taxide-delta-test"

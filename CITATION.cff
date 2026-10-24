@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software in academic or scientific research, please cite it using the metadata from this file."
+title: "TAXIDE: Taxonomic Integrated Development Environment"
+abstract: >-
+  TAXIDE (Taxonomic Integrated Development Environment) is a 100% pure Haskell
+  environment for describing, validating, and computing morphological taxonomic
+  matrices. Treating taxonomy as code, TAXIDE formalizes descriptive biology with
+  algebraic data types, provides a real-time terminal UI (TUI) with taxonomic linting,
+  native in-memory inference engines replacing legacy DELTA/CONFOR/KEY/DIST suites,
+  exact cladistic parsimony algorithms (Fitch, Sankoff/Wagner), phenetic distance
+  matrices (Gower coefficient), and cross-target compilation to NEXUS, TNT, JSON,
+  and high-performance columnar binary formats (HDF5/AVX-512).
+type: software
+version: 0.1.0
+date-released: "2026-10-24"
+license: Apache-2.0
+repository-code: "https://github.com/ecotech/taxide"
+authors:
+  - name: "TAXIDE Architecture & Scientific Computing Team"
+    affiliation: "Ecotech Computational Biology & HPC Systems Lab"
+keywords:
+  - "taxonomy"
+  - "bioinformatics"
+  - "cladistics"
+  - "morphological-matrix"
+  - "delta-format"
+  - "haskell"
+  - "functional-programming"
+  - "fitch-parsimony"
+  - "sankoff-parsimony"
+  - "gower-distance"
+  - "terminal-ui"
+preferred-citation:
+  type: article
+  title: "TAXIDE: Taxonomy as Code — Formal In-Memory Morphological Processing and Cladistic Invariants in Haskell"
+  authors:
+    - name: "TAXIDE Core Architecture Working Group"
+  year: 2026
+  journal: "TAXIDE Scientific Technical Reports"
+  volume: 1
+  pages: 1-7
