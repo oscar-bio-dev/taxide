@@ -40,6 +40,7 @@ library
         Taxide.Engine.Dependencies
         Taxide.Engine.Discretize
         Taxide.Engine.Matrix
+        Taxide.Engine.Linter
         Taxide.Engine.Pipeline
     build-depends:
         base >= 4.18 && < 5,

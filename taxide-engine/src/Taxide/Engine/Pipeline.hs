@@ -25,7 +25,6 @@ import GHC.Generics (Generic)
 
 import Taxide.Core.Invariants
   ( validateExclusivePolymorphism
-  , validateStatRange
   , validateStateBounds
   )
 import Taxide.Core.Item (ItemDef)
@@ -41,6 +40,7 @@ import Taxide.Engine.Diagnostic
   , taxonCharLoc
   )
 import Taxide.Engine.Implicits (injectImplicits)
+import Taxide.Engine.Linter (lintResolvedMatrix)
 import Taxide.Engine.Matrix (ColumnarMatrix, buildColumnarMatrix)
 import Taxide.Engine.Variants (AttributedState (..), ResolvedTaxon (..), resolveVariants)
 
@@ -90,11 +90,14 @@ runPipelinePure specs items =
       -- Paso 4: Validación de invariantes adicionales
       diagsInvariants = validateInvariants specs taxaStep3
 
-      -- Consolidación de todos los diagnósticos
-      allDiags = diagsStep1 ++ diagsStep2 ++ diagsStep3 ++ diagsInvariants
-
       -- Paso 5: Transposición a matriz SoA
       soaMatrix = buildColumnarMatrix specs taxaStep3
+
+      -- Paso 6: Linter ontológico, cladístico y de integridad
+      diagsLinter = lintResolvedMatrix specs items taxaStep3 soaMatrix
+
+      -- Consolidación de todos los diagnósticos
+      allDiags = diagsStep1 ++ diagsStep2 ++ diagsStep3 ++ diagsInvariants ++ diagsLinter
 
   in (taxaStep3, soaMatrix, allDiags)
 
@@ -173,28 +176,6 @@ validateInvariants specs taxa = concatMap checkTaxon taxa
 
           in exclusiveDiag ++ boundsDiag
 
-        AttrReal _ sr _ ->
-          if not (validateStatRange sr)
-            then [ LintDiagnostic
-                     { diagCode     = "TAX-RNG-001"
-                     , diagSeverity = SeverityError
-                     , diagLocation = loc
-                     , diagMessage  = "Rango cuantitativo inconsistente en el carácter " <> T.pack (show cid)
-                                   <> ": no se cumple min <= normalMin <= normalMax <= max."
-                     }
-                 ]
-            else []
-
-        AttrInteger _ sr ->
-          if not (validateStatRange sr)
-            then [ LintDiagnostic
-                     { diagCode     = "TAX-RNG-001"
-                     , diagSeverity = SeverityError
-                     , diagLocation = loc
-                     , diagMessage  = "Rango entero inconsistente en el carácter " <> T.pack (show cid)
-                                   <> ": no se cumple min <= normalMin <= normalMax <= max."
-                     }
-                 ]
-            else []
-
-        AttrText _ _ -> []
+        AttrReal _ _ _    -> []
+        AttrInteger _ _   -> []
+        AttrText _ _      -> []

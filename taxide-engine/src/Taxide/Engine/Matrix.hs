@@ -18,6 +18,7 @@ module Taxide.Engine.Matrix
   , tagVariable
   , NumericColumn (..)
   , ColumnarMatrix (..)
+  , ResolvedMatrix
   , buildColumnarMatrix
   , lookupDiscreteCell
   , lookupNumericCell
@@ -97,6 +98,9 @@ data ColumnarMatrix = ColumnarMatrix
   , cmTextCols     :: !(Map Int (Vector Text))
   -- ^ Columnas descriptivas TE de texto libre
   } deriving (Eq, Show, Generic, NFData)
+
+-- | Sinónimo de tipo que enfatiza el rol de 'ColumnarMatrix' como matriz resuelta en memoria.
+type ResolvedMatrix = ColumnarMatrix
 
 -- | Construye la matriz resuelta columnar SoA a partir de las especificaciones y taxones.
 buildColumnarMatrix :: SpecsDef -> [ResolvedTaxon] -> ColumnarMatrix

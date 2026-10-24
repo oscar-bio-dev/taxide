@@ -20,6 +20,12 @@ module Taxide.Engine.Diagnostic
   , LintDiagnostic (..)
   , EngineError (..)
   , engineErrorToDiagnostic
+  , invariantCharDiag
+  , autapomorphyDiag
+  , uncodedCharDiag
+  , duplicateTaxonDiag
+  , incoherentRangeDiag
+  , indistinguishableTaxaDiag
   , renderDiagnosticTerminal
   , renderDiagnosticJson
   , renderDiagnosticsReportTerminal
@@ -121,6 +127,78 @@ engineErrorToDiagnostic err = case err of
                     <> " tiene un estado activo explícito a pesar de que su controlador " <> T.pack (show ctrlId)
                     <> " se encuentra en estado inhabilitante. El estado ha sido forzado a Inapplicable ('-')."
       }
+
+-- | TAX-CLAD-001: Carácter invariante sin variación informativa.
+invariantCharDiag :: Int -> Int -> LintDiagnostic
+invariantCharDiag cid nTaxa =
+  LintDiagnostic
+    { diagCode     = "TAX-CLAD-001"
+    , diagSeverity = SeverityWarning
+    , diagLocation = charLoc cid
+    , diagMessage  = "Carácter invariante: el carácter " <> T.pack (show cid)
+                  <> " presenta exactamente el mismo estado en todos los taxones codificados ("
+                  <> T.pack (show nTaxa) <> " taxones); no aporta información topológica para máxima parsimonia."
+    }
+
+-- | TAX-CLAD-002: Autapomorfía no informativa para filogenia.
+autapomorphyDiag :: Int -> Text -> Int -> LintDiagnostic
+autapomorphyDiag cid autTaxon countCommon =
+  LintDiagnostic
+    { diagCode     = "TAX-CLAD-002"
+    , diagSeverity = SeverityInfo
+    , diagLocation = taxonCharLoc autTaxon cid
+    , diagMessage  = "Autapomorfía no informativa para parsimonia: en el carácter " <> T.pack (show cid)
+                  <> ", el taxón '" <> autTaxon <> "' posee un estado derivado único frente a "
+                  <> T.pack (show countCommon) <> " taxones con estado basal; útil para diagnóstico pero no resuelve clados."
+    }
+
+-- | TAX-DATA-001: Carácter no codificado en ningún taxón.
+uncodedCharDiag :: Int -> Int -> LintDiagnostic
+uncodedCharDiag cid nTaxa =
+  LintDiagnostic
+    { diagCode     = "TAX-DATA-001"
+    , diagSeverity = SeverityWarning
+    , diagLocation = charLoc cid
+    , diagMessage  = "Carácter no codificado: el carácter " <> T.pack (show cid)
+                  <> " carece de datos válidos (100% Unknown o Inapplicable) en todos los taxones evaluados ("
+                  <> T.pack (show nTaxa) <> " taxones). Se sugiere su exclusión o eliminación del dataset."
+    }
+
+-- | TAX-DATA-002: Declaración duplicada de taxón primario.
+duplicateTaxonDiag :: Text -> Maybe Text -> Int -> LintDiagnostic
+duplicateTaxonDiag name mAuth count =
+  LintDiagnostic
+    { diagCode     = "TAX-DATA-002"
+    , diagSeverity = SeverityWarning
+    , diagLocation = taxonLoc name
+    , diagMessage  = "Taxón duplicado: se detectaron " <> T.pack (show count)
+                  <> " declaraciones del taxón principal '# " <> name
+                  <> maybe "" (\a -> " <" <> a <> ">") mAuth
+                  <> "'; los nombres de taxones primarios deben ser unívocos."
+    }
+
+-- | TAX-MATH-001: Incoherencia matemática en rangos estadísticos cuantitativos.
+incoherentRangeDiag :: Text -> Int -> LintDiagnostic
+incoherentRangeDiag taxonName cid =
+  LintDiagnostic
+    { diagCode     = "TAX-MATH-001"
+    , diagSeverity = SeverityError
+    , diagLocation = taxonCharLoc taxonName cid
+    , diagMessage  = "Incoherencia matemática en rango cuantitativo del carácter " <> T.pack (show cid)
+                  <> ": los valores de StatRange violan la progresión extremeMin <= normalLow <= centralTend <= normalHigh <= extremeMax."
+    }
+
+-- | TAX-WARN-001: Taxones biológicamente indistinguibles.
+indistinguishableTaxaDiag :: Text -> Text -> LintDiagnostic
+indistinguishableTaxaDiag nameA nameB =
+  LintDiagnostic
+    { diagCode     = "TAX-WARN-001"
+    , diagSeverity = SeverityWarning
+    , diagLocation = DiagnosticLocation Nothing (Just (nameA <> " / " <> nameB)) Nothing
+    , diagMessage  = "Taxones biológicamente indistinguibles: '" <> nameA <> "' y '" <> nameB
+                  <> "' poseen vectores de atributos morfológicos idénticos (excluyendo caracteres de texto libre TE); "
+                  <> "generarán politomías irresolubles (zero-length branches) en análisis filogenéticos."
+    }
 
 -- | Renderiza un diagnóstico individual en formato legible de terminal.
 renderDiagnosticTerminal :: LintDiagnostic -> Text

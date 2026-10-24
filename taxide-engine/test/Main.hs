@@ -23,7 +23,7 @@ import Test.Tasty.Hedgehog
 import Test.Tasty.HUnit hiding (assert)
 
 import Taxide.Core.Invariants (collectActiveStates)
-import Taxide.Core.Item (mkPrimaryItem, mkVariantItem)
+import Taxide.Core.Item (ItemDef (..), mkPrimaryItem, mkVariantItem)
 import Taxide.Core.Specs (DependentRule (..), ImplicitRule (..), SpecsDef (..), emptySpecs)
 import Taxide.Core.Types
   ( CharacterType (..)
@@ -32,10 +32,16 @@ import Taxide.Core.Types
   , RawStateExpr (..)
   , StateId
   , StateToken (..)
+  , mkRangeStat
   , mkSingleStat
   )
 import Taxide.Engine.Dependencies (checkDependencyDAG)
-import Taxide.Engine.Diagnostic (EngineError (..), LintDiagnostic (..), Severity (..))
+import Taxide.Engine.Diagnostic
+  ( DiagnosticLocation (..)
+  , EngineError (..)
+  , LintDiagnostic (..)
+  , Severity (..)
+  )
 import Taxide.Engine.Discretize
   ( DiscretizeMethod (..)
   , DiscretizeTarget (..)
@@ -64,6 +70,7 @@ tests = testGroup "Taxide.Engine Test Suite"
       , testImplicitValues
       , testDAGCycleDetection
       , testQuantitativeDiscretization
+      , testCladisticAndOntologicalLinter
       ]
   , testGroup "Property-Based Tests (Hedgehog): Invariantes Matemáticas y SoA"
       [ testProperty "Invariante DAG: Celda dependiente siempre Inapplicable si controlador dispara" propDagInactivation
@@ -302,7 +309,128 @@ testQuantitativeDiscretization = testGroup "Discretización Cuantitativa (IN/RN 
   ]
 
 --------------------------------------------------------------------------------
--- 6. Pruebas Basadas en Propiedades (Hedgehog)
+-- 6. Pruebas del Linter Cladístico y Ontológico
+--------------------------------------------------------------------------------
+
+testCladisticAndOntologicalLinter :: TestTree
+testCladisticAndOntologicalLinter = testGroup "Linter Cladístico y Ontológico (TAX-CLAD, TAX-DATA, TAX-MATH, TAX-WARN)"
+  [ testCase "TAX-CLAD-001: Carácter invariante emite advertencia Warning" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 2
+            , specCharTypes     = Map.fromList [(1, UM), (2, UM)]
+            }
+          taxa = [ mkPrimaryItem "Taxon_A" [(1, mkState 1), (2, mkState 1)]
+                 , mkPrimaryItem "Taxon_B" [(1, mkState 1), (2, mkState 2)]
+                 , mkPrimaryItem "Taxon_C" [(1, mkState 1), (2, mkState 3)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+          invDiags = filter (\d -> diagCode d == "TAX-CLAD-001") diags
+
+      length invDiags @?= 1
+      case invDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityWarning
+          locCharId (diagLocation d) @?= Just 1
+        [] -> assertFailure "Se esperaba advertencia TAX-CLAD-001"
+
+  , testCase "TAX-CLAD-002: Autapomorfía no informativa emite nota Info" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 2
+            , specCharTypes     = Map.fromList [(1, UM), (2, UM)]
+            }
+          taxa = [ mkPrimaryItem "Taxon_A" [(1, mkState 1), (2, mkState 1)]
+                 , mkPrimaryItem "Taxon_B" [(1, mkState 1), (2, mkState 2)]
+                 , mkPrimaryItem "Taxon_C" [(1, mkState 2), (2, mkState 3)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+          autDiags = filter (\d -> diagCode d == "TAX-CLAD-002") diags
+
+      length autDiags @?= 1
+      case autDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityInfo
+          locTaxon (diagLocation d) @?= Just "Taxon_C"
+          locCharId (diagLocation d) @?= Just 1
+        [] -> assertFailure "Se esperaba nota TAX-CLAD-002"
+
+  , testCase "TAX-DATA-001: Carácter 100% no codificado emite advertencia Warning" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 3
+            , specCharTypes     = Map.fromList [(1, UM), (2, UM), (3, UM)]
+            }
+          taxa = [ mkPrimaryItem "Taxon_A" [(1, mkState 1), (2, mkState 1)]
+                 , mkPrimaryItem "Taxon_B" [(1, mkState 2), (2, mkState 2)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+          uncodedDiags = filter (\d -> diagCode d == "TAX-DATA-001") diags
+
+      length uncodedDiags @?= 1
+      case uncodedDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityWarning
+          locCharId (diagLocation d) @?= Just 3
+        [] -> assertFailure "Se esperaba advertencia TAX-DATA-001"
+
+  , testCase "TAX-DATA-002: Taxones principales duplicados emite advertencia Warning" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 2
+            , specCharTypes     = Map.fromList [(1, UM), (2, UM)]
+            }
+          itemDupe1 = (mkPrimaryItem "Craspedacusta sowerbyi" [(1, mkState 1), (2, mkState 1)])
+            { itemAuthority = Just "Lankester, 1880" }
+          itemDupe2 = (mkPrimaryItem "Craspedacusta sowerbyi" [(1, mkState 2), (2, mkState 2)])
+            { itemAuthority = Just "Lankester, 1880" }
+          (_, _, diags) = runPipelinePure specs [itemDupe1, itemDupe2]
+          dupeDiags = filter (\d -> diagCode d == "TAX-DATA-002") diags
+
+      length dupeDiags @?= 1
+      case dupeDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityWarning
+          locTaxon (diagLocation d) @?= Just "Craspedacusta sowerbyi"
+        [] -> assertFailure "Se esperaba advertencia TAX-DATA-002"
+
+  , testCase "TAX-MATH-001: StatRange con normalMin > normalMax emite Error bloqueante" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 1
+            , specCharTypes     = Map.fromList [(1, RN)]
+            }
+          badRange = mkRangeStat (25.0 :: Double) (10.0 :: Double)
+          taxonBad = mkPrimaryItem "Taxon_Bad"
+            [ (1, AttrReal Nothing badRange Nothing)
+            ]
+          (_, _, diags) = runPipelinePure specs [taxonBad]
+          mathDiags = filter (\d -> diagCode d == "TAX-MATH-001") diags
+
+      length mathDiags @?= 1
+      case mathDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityError
+          locTaxon (diagLocation d) @?= Just "Taxon_Bad"
+          locCharId (diagLocation d) @?= Just 1
+        [] -> assertFailure "Se esperaba error TAX-MATH-001"
+
+  , testCase "TAX-WARN-001: Taxones con idéntico vector de atributos resueltos emiten Warning" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 2
+            , specCharTypes     = Map.fromList [(1, UM), (2, UM)]
+            }
+          taxa = [ mkPrimaryItem "Taxon_Alpha" [(1, mkState 1), (2, mkState 2)]
+                 , mkPrimaryItem "Taxon_Beta"  [(1, mkState 1), (2, mkState 2)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+          warnDiags = filter (\d -> diagCode d == "TAX-WARN-001") diags
+
+      length warnDiags @?= 1
+      case warnDiags of
+        (d : _) -> do
+          diagSeverity d @?= SeverityWarning
+          locTaxon (diagLocation d) @?= Just "Taxon_Alpha / Taxon_Beta"
+        [] -> assertFailure "Se esperaba advertencia TAX-WARN-001"
+  ]
+
+--------------------------------------------------------------------------------
+-- 7. Pruebas Basadas en Propiedades (Hedgehog)
 --------------------------------------------------------------------------------
 
 -- Generador de estados discretos

@@ -41,6 +41,13 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 - **Suite de Pruebas `taxide-engine-test`:**
   - Pruebas unitarias de los ejemplos canónicos oficiales de Dallwitz & Paine (1986).
   - Pruebas basadas en propiedades con `Hedgehog` verificando la invariante del DAG (inactivación biológica estricta) y la preservación dimensional en la transposición SoA.
+- **Linter Ontológico y Cladístico Avanzado (`Taxide.Engine.Linter`):**
+  - Detección de caracteres invariantes sin variación topológica informativa para parsimonia (`TAX-CLAD-001` - Warning).
+  - Detección de autapomorfías singulares no informativas para resolución de clados (`TAX-CLAD-002` - Info).
+  - Identificación de caracteres 100% no codificados sugiriendo su exclusión (`TAX-DATA-001` - Warning).
+  - Auditoría de taxones principales duplicados con idéntico nombre y autoridad (`TAX-DATA-002` - Warning).
+  - Validación matemática de coherencia en rangos cuantitativos `StatRange` (`TAX-MATH-001` - Error bloqueante).
+  - Identificación de taxones biológicamente indistinguibles causantes de ramas de longitud cero (`TAX-WARN-001` - Warning).
 
 ---
 
