@@ -99,13 +99,22 @@ cabal run taxide-fmt -- -i examples/craspedacusta --check
 cabal run taxide-fmt -- -i examples/craspedacusta -o ./craspedacusta_canonical
 ```
 
-### 3. Ejecutar las Pruebas Formales y de Propiedades
+### 3. Auditar Invariantes Biológicas e Inferir Estados con `taxide-lint`
+```bash
+# Ejecutar pipeline de inferencia semántica y ver métricas SoA en memoria
+cabal run taxide-lint -- -i examples/craspedacusta -v
+
+# Exportar diagnósticos ontológicos en formato JSON estructurado
+cabal run taxide-lint -- -i examples/craspedacusta --json
+```
+
+### 4. Ejecutar las Pruebas Formales y de Propiedades
 ```bash
 # Correr pruebas unitarias (invariantes biológicas) y pruebas basadas en propiedades (Hedgehog)
 cabal test all --test-show-details=streaming
 ```
 
-### 4. Compilar la Especificación Formal a PDF
+### 5. Compilar la Especificación Formal a PDF
 ```bash
 # Compilar el manifiesto matemático (detección automática: pdflatex nativo o contenedor Docker)
 runhaskell doc/pdfltex.hs doc/taxide.tex
@@ -158,13 +167,13 @@ gantt
     dateFormat  YYYY-MM
     section Fase 1: Parsing & Núcleo
     taxide-core (ADTs Biológicos)           :done, f1_1, 2026-10, 1M
-    taxide-delta (Megaparsec Parser)         :active, f1_2, after f1_1, 1M
-    taxide-fmt CLI                           :f1_3, after f1_2, 1M
+    taxide-delta (Megaparsec Parser)         :done, f1_2, after f1_1, 1M
+    taxide-fmt CLI                           :done, f1_3, after f1_2, 1M
     section Fase 2: Inferencia en Memoria
-    Resolución de '#' y Variantes '#+'       :f2_1, after f1_3, 1M
-    DAG de *DEPENDENT CHARACTERS             :f2_2, after f2_1, 1M
-    Inyección de *IMPLICIT VALUES            :f2_3, after f2_2, 1M
-    taxide-lint CLI                          :f2_4, after f2_3, 1M
+    Resolución de '#' y Variantes '#+'       :done, f2_1, after f1_3, 1M
+    DAG de *DEPENDENT CHARACTERS             :done, f2_2, after f2_1, 1M
+    Inyección de *IMPLICIT VALUES            :done, f2_3, after f2_2, 1M
+    taxide-lint CLI                          :done, f2_4, after f2_3, 1M
     section Fase 3: Compiladores Multi-Target
     Exportadores NEXUS & TNT                 :f3_1, after f2_4, 1M
     Lenguaje Natural (Markdown/HTML)         :f3_2, after f3_1, 1M
@@ -193,7 +202,7 @@ gantt
   - *Golden Tests* con matrices canónicas históricas de CSIRO (*Grass Genera of the World*, *Craspedacusta*), incluyendo extracción de autoridades taxonómicas.
 * **🎯 Hito Entregable (Milestone 1):** CLI `taxide-fmt` para parseo, validación léxica y reformateo canónico sin pérdida semántica.
 
-#### 🟡 Fase 2: Motor de Resolución Semántica e Inferencia en Memoria (Reemplazo de CONFOR)
+#### 🟢 Fase 2: Motor de Resolución Semántica e Inferencia en Memoria (Reemplazo de CONFOR) [COMPLETADA]
 * **Paquete:** [`taxide-engine`](taxide-engine)
 * **Objetivos Técnicos:**
   - Resolución monoidal estricta de herencia para ítems variantes (`#+`).

@@ -121,7 +121,7 @@ data Attribute
 \end{lstlisting}
 
 \subsection{Enrutamiento Determinista de Algoritmos}
-Gracias a la correspondencia unívoca entre la clasificación del carácter en el AST y su tipo algebraico, el motor analítico de TAXIDE (\texttt{tide-engine}) elimina el uso de condicionales imperativos frágiles en tiempo de ejecución. La selección del núcleo computacional se rige por un despacho formal exhaustivo:
+Gracias a la correspondencia unívoca entre la clasificación del carácter en el AST y su tipo algebraico, el motor analítico de TAXIDE (\texttt{taxide-engine}) elimina el uso de condicionales imperativos frágiles en tiempo de ejecución. La selección del núcleo computacional se rige por un despacho formal exhaustivo:
 \begin{itemize}
     \item Caracteres \texttt{UnorderedMultistate (UM)} $\implies$ Enrutados al \textbf{Algoritmo de Fitch} (optimización de parsimonia mediante intersecciones conjuntistas en $O(1)$ de bits).
     \item Caracteres \texttt{OrderedMultistate (OM)} $\implies$ Enrutados al \textbf{Algoritmo de Sankoff/Wagner} (programación dinámica sobre árboles con matrices de costo aditivas).
@@ -266,11 +266,11 @@ Formalmente, el sistema de dependencias se modela como una relación funcional s
 \begin{equation}
 \mathcal{D} \colon \mathcal{C} \times \mathcal{P}(\mathcal{S}) \to \mathcal{P}(\mathcal{C})
 \end{equation}
-Si el carácter controlador $c \in \mathcal{C}$ adopta un estado $s \in \mathcal{S}_c$ perteneciente al conjunto de inhabilitación, el conjunto de caracteres dependientes $\mathcal{D}(c, s) = \{d_1, d_2, \dots, d_m\}$ es proyectado de manera estricta al pseudo-valor:
+Sea $S_{\text{obs}}$ el conjunto de estados observados en el carácter controlador $c \in \mathcal{C}$ y $S_{\text{inh}}$ el conjunto de estados que inhabilitan biológicamente a los caracteres dependientes $\mathcal{D}(c, S_{\text{inh}}) = \{d_1, d_2, \dots, d_m\}$. Siguiendo la especificación rigurosa de Dallwitz \& Paine (1986), la inhabilitación se activa si y solo si todos los estados observados corresponden a la condición inhabilitante:
 \begin{equation}
-\forall d \in \mathcal{D}(c, s), \quad \text{Attr}(T, d) \coloneqq \texttt{AttrPseudo Inapplicable}
+\forall d \in \mathcal{D}(c, S_{\text{inh}}), \quad (S_{\text{obs}} \neq \emptyset \land S_{\text{obs}} \subseteq S_{\text{inh}}) \implies \text{Attr}(T, d) \coloneqq \texttt{AttrPseudo Inapplicable}
 \end{equation}
-TAXIDE detecta ciclos en tiempo de parsing analizando la matriz de adyacencia de $\mathcal{D}$, impidiendo que existan dependencias circulares mediante validación estática de grafos acíclicos dirigidos (DAGs).
+Si $S_{\text{obs}}$ contiene polimorfismo que incluye algún estado aplicable fuera de $S_{\text{inh}}$ (ej. $1/2$ cuando solo $2$ inhabilita), el carácter dependiente permanece aplicable. TAXIDE detecta ciclos en tiempo de compilación analizando la matriz de adyacencia de $\mathcal{D}$, impidiendo dependencias circulares mediante validación estática de grafos acíclicos dirigidos (DAGs).
 
 \subsection{Inyección Determinista de Valores Implícitos}
 La directiva \texttt{*IMPLICIT VALUES (c,s:t)} asigna estados por defecto para optimizar la taquigrafía de descripciones:
@@ -287,7 +287,7 @@ Los ítems variantes (\texttt{\#+}) representan subespecies o morfismos que deri
 \begin{equation}
 \mathbf{A}_{\text{final}}(\#+\text{Var}) = \mathbf{A}_{\text{var}} \mathbin{\cup_{\text{left}}} \mathbf{A}_{\text{base}}
 \end{equation}
-where los atributos declarados en el ítem variante sobrescriben por la izquierda los atributos ancestrales, preservando la inmutabilidad y la pureza referencial.
+donde los atributos declarados en el ítem variante sobrescriben por la izquierda los atributos ancestrales, preservando la inmutabilidad y la pureza referencial.
 
 % =========================================================================
 \section{Interoperabilidad Biodiversa: Proyección al Estándar Darwin Core Archive (DwC-A)}

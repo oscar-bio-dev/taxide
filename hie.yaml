@@ -10,3 +10,10 @@ cradle:
       component: "taxide-delta:exe:taxide-fmt"
     - path: "./taxide-delta/test"
       component: "taxide-delta:test:taxide-delta-test"
+    - path: "./taxide-engine/src"
+      component: "taxide-engine:lib:taxide-engine"
+    - path: "./taxide-engine/app"
+      component: "taxide-engine:exe:taxide-lint"
+    - path: "./taxide-engine/test"
+      component: "taxide-engine:test:taxide-engine-test"
+

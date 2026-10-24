@@ -11,6 +11,7 @@ License     : Apache-2.0
 module Taxide.Delta.Pipeline
   ( DeltaDataset (..)
   , readDeltaDataset
+  , readDeltaFiles
   , writeDeltaDataset
   , parseSpecsText
   , parseCharsText
@@ -21,7 +22,6 @@ module Taxide.Delta.Pipeline
   ) where
 
 import Data.Text (Text)
-import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>))
@@ -45,17 +45,17 @@ data DeltaDataset = DeltaDataset
 
 -- | Carga y analiza los archivos SPECS, CHARS e ITEMS desde un directorio dado.
 readDeltaDataset :: FilePath -> IO (Either Text DeltaDataset)
-readDeltaDataset dir = do
-  let specsPath = dir </> "SPECS"
-      charsPath = dir </> "CHARS"
-      itemsPath = dir </> "ITEMS"
+readDeltaDataset dir = readDeltaFiles (dir </> "SPECS") (dir </> "CHARS") (dir </> "ITEMS")
 
+-- | Carga y analiza los archivos SPECS, CHARS e ITEMS a partir de rutas específicas.
+readDeltaFiles :: FilePath -> FilePath -> FilePath -> IO (Either Text DeltaDataset)
+readDeltaFiles specsPath charsPath itemsPath = do
   sExists <- doesFileExist specsPath
   cExists <- doesFileExist charsPath
   iExists <- doesFileExist itemsPath
 
   if not (sExists && cExists && iExists)
-    then pure $ Left $ "Error: El directorio '" <> T.pack dir <> "' debe contener los archivos SPECS, CHARS e ITEMS."
+    then pure $ Left "Error: No se encontraron los tres archivos cardinales SPECS, CHARS e ITEMS."
     else do
       specsContent <- TIO.readFile specsPath
       case parseSpecsText specsPath specsContent of

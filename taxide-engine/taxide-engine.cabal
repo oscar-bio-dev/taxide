@@ -1,0 +1,91 @@
+cabal-version:      3.0
+name:               taxide-engine
+version:            0.1.0.0
+synopsis:           Motor de resolución semántica, inferencia lógica y cladística en memoria
+description:        Reemplazo funcional puro de CONFOR, resolución monoidal de variantes (#+),
+                    DAG de dependencias, discretización cuantitativa y transposición a matriz SoA.
+license:            Apache-2.0
+author:             TAXIDE Core Architecture Team
+maintainer:         core@taxide.org
+category:           Bioinformatics, Scientific Computing
+build-type:         Simple
+
+common common-options
+    default-language:   GHC2021
+    default-extensions:
+        StrictData
+        OverloadedStrings
+        DeriveGeneric
+        DeriveAnyClass
+        BangPatterns
+        TypeFamilies
+        GADTs
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+
+library
+    import:             common-options
+    hs-source-dirs:     src
+    exposed-modules:
+        Taxide.Engine.Diagnostic
+        Taxide.Engine.Variants
+        Taxide.Engine.Implicits
+        Taxide.Engine.Dependencies
+        Taxide.Engine.Discretize
+        Taxide.Engine.Matrix
+        Taxide.Engine.Pipeline
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        text >= 2.0,
+        bytestring >= 0.11,
+        containers >= 0.6,
+        vector >= 0.13,
+        deepseq >= 1.4,
+        hashable >= 1.4,
+        prettyprinter >= 1.7,
+        filepath >= 1.4,
+        directory >= 1.3,
+        time >= 1.12
+
+executable taxide-lint
+    import:             common-options
+    hs-source-dirs:     app
+    main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        text >= 2.0,
+        containers >= 0.6,
+        optparse-applicative >= 0.18,
+        filepath >= 1.4,
+        directory >= 1.3,
+        time >= 1.12
+
+test-suite taxide-engine-test
+    import:             common-options
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        text >= 2.0,
+        containers >= 0.6,
+        vector >= 0.13,
+        tasty >= 1.4,
+        tasty-hunit >= 0.10,
+        tasty-hedgehog >= 1.4,
+        hedgehog >= 1.2

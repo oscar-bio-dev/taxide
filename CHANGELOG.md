@@ -7,6 +7,43 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [0.2.0] - 2026-10-24
+
+### 🚀 Añadido
+
+#### `taxide-engine` (Motor de Resolución Semántica e Inferencia en Memoria)
+- **Herencia de Variantes Taxonómicas (`Taxide.Engine.Variants`):**
+  - Recorrido secuencial y unión monoidal sesgada a la izquierda (`Map.union`) entre los atributos explícitos de la variante (`#+`) y su taxón principal precedente (`#`).
+  - Detección estructurada de ítems variantes huérfanos sin padre (`TAX-VAR-001`).
+- **Inyección Determinista de Valores Implícitos (`Taxide.Engine.Implicits`):**
+  - Inyección de estados por defecto `*IMPLICIT VALUES (c, s:t)` sobre caracteres omitidos ($s$) o no puntuados ($t$).
+  - Validación de tipos de caracteres: restricción estricta a caracteres cualitativos (`UM`, `OM`, `EUM`, `EOM`), rechazando variables cuantitativas (`IN`, `RN`) y de texto (`TE`) con código `TAX-IMP-001`.
+- **DAG de Dependencias y Propagación Reactiva (`Taxide.Engine.Dependencies`):**
+  - Compilación estática del grafo de dependencias de `*DEPENDENT CHARACTERS` y validación de aciclicidad mediante ordenamiento topológico (algoritmo de Kahn), detectando ciclos dirigidos con código `TAX-DEP-001`.
+  - Propagación de inhabilitación en orden topológico siguiendo la regla canónica de Dallwitz & Paine: inactiva cuando el conjunto observado no es vacío y es subconjunto de los estados inhabilitantes ($S_{obs} \neq \emptyset \land S_{obs} \subseteq S_{inh}$), soportando polimorfismos parciales válidos (ej. `10,1/2 12,1/-`).
+  - Detección de violaciones biológicas contradictorias cuando un carácter dependiente posee un estado activo explícito bajo un controlador inhabilitado (`TAX-DEP-002`), forzando de forma resiliente el estado a `Inapplicable` (`'-'`).
+- **Discretización Cuantitativa Dinámica (`Taxide.Engine.Discretize`):**
+  - Transformación funcional pura de variables continuas y de conteo (`IN`/`RN`) a multiestado ordenado (`OM`).
+  - Soporte para la Regla de la Raíz Cuadrada ($k = \lceil \sqrt{N} \rceil$) y Regla de Sturges ($k = \lceil 1 + 3.322 \log_{10}(N) \rceil$), con acotamiento estricto $k \in [2, 30]$.
+  - Particionamiento dinámico de rangos estadísticos utilizando el valor central o el punto medio normal de `StatRange`.
+- **Matriz Columnar Resuelta SoA (`Taxide.Engine.Matrix`):**
+  - Representación *Structure of Arrays* (SoA) altamente eficiente para hardware moderno.
+  - Caracteres discretos empacados en vectores sin encajonar `Data.Vector.Unboxed Word64` con vector paralelo `Word8` para etiquetas de pseudo-valores (`Valid`, `Unknown`, `Inapplicable`, `Variable`).
+  - Columnas cuantitativas desacopladas en cinco vectores `Vector.Unboxed Double` (`min`, `normalLow`, `central`, `normalHigh`, `max`).
+- **Pipeline Orquestador y Cronometraje Monotónico (`Taxide.Engine.Pipeline`):**
+  - Pipeline puro y determinista de resolución en 5 etapas en memoria (cero archivos temporales en disco).
+  - Medición de tiempos de ejecución de alta precisión en milisegundos (`GHC.Clock.getMonotonicTime`).
+- **Ejecutable CLI `taxide-lint`:**
+  - Auditoría semántica completa de colecciones DELTA (`SPECS`, `CHARS`, `ITEMS`).
+  - Salida formateada para terminal con desglose por código de regla, ubicación taxonómica y severidad (`Error`, `Warning`, `Info`).
+  - Opción `--json` estructurada para integración sin fricción en pipelines de CI/CD.
+  - Opción `-v` / `--verbose` con métricas de la matriz SoA calculada en memoria.
+- **Suite de Pruebas `taxide-engine-test`:**
+  - Pruebas unitarias de los ejemplos canónicos oficiales de Dallwitz & Paine (1986).
+  - Pruebas basadas en propiedades con `Hedgehog` verificando la invariante del DAG (inactivación biológica estricta) y la preservación dimensional en la transposición SoA.
+
+---
+
 ## [0.1.0] - 2026-10-24
 
 ### 🚀 Añadido
