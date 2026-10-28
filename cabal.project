@@ -2,6 +2,7 @@ packages:
     taxide-core/
     taxide-delta/
     taxide-engine/
+    taxide-export/
 
 tests: True
 benchmarks: True

@@ -7,6 +7,26 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [0.3.0] - 2026-10-28
+
+### 🚀 Añadido
+
+#### `taxide-export` (Fase 3: Compiladores Multi-Target) y CLI `taxide-compile`
+- **`Taxide.Export.Nexus` (`--target nexus`):** bloques `TAXA`, `CHARACTERS` (`DATATYPE=STANDARD`, `CHARLABELS`, `STATELABELS`) y `ASSUMPTIONS` (`TYPESET unord/ord`); la `MATRIX` distingue polimorfismo `(12)` (de `&`) e incertidumbre `{12}` (de `/` y rangos). Los caracteres `IN`/`RN` se discretizan a `OM`.
+- **`Taxide.Export.TNT` (`--target tnt`):** `xread` con dimensiones exactas, polimorfismos `[12]`, `cnames` y `ccode` (`+` ordenados, `-` desordenados).
+- **`Taxide.Export.Natural` (`--target natural`):** reemplazo puro de TONAT; prosa en Markdown y HTML5 (`--lang en|es`), subtítulos temáticos, unidades, caracteres `TE` y omisión opcional de valores implícitos.
+- **`Taxide.Export.DarwinCore` (`--target dwca`):** `taxon.txt`, `measurementorfact.txt` (sin `Unknown`/`Inapplicable`), `description.txt`, `meta.xml` y `eml.xml` en un `.zip` reproducible byte a byte (orden fijo y marca de tiempo 1980-01-01) vía `Codec.Archive.Zip`; variantes `#+` enlazadas con `parentNameUsageID` y `taxonRank` sólo con marcador explícito.
+- **`Taxide.Export.Json` (`--target json`):** `FeatureCollection` GeoJSON tipado con `aeson`, apto para PostGIS.
+- **`Taxide.Export.BinaryHPC` (`--target hdf5`):** contenedor binario columnar `TAXIHPC1` (no es un fichero HDF5) con cabecera y tensores `Word64`/`Double` alineados a 64 bytes.
+- Suite `taxide-export-test` (16 pruebas): dimensiones y polimorfismos NEXUS/TNT, determinismo del ZIP, 5 entradas del esquema en estrella, ausencia de `U`/`-` en `measurementorfact.txt`, resolución de todas las claves `coreid`, JSON y alineación del binario.
+
+### 🔄 Cambiado
+- **`TAX-CLAD-002`** implementa íntegramente la Definición 4.1: reporta cualquier carácter variable con menos de dos estados presentes en al menos dos taxones (incluidas varias autapomorfías); el caso de autapomorfía única conserva su localización en el taxón.
+- `Taxide.Engine.Discretize` exporta `quantitativeRange` (unifica `RN` e `IN` a `StatRange Double`).
+- `doc/taxide.tex` v0.3.0: nueva Sección 7 (compiladores multi-objetivo), Tabla 1 actualizada, catálogo de diagnósticos. README y RUNBOOK con los comandos de `taxide-compile` y el diagrama de Gantt actualizado.
+
+---
+
 ## [0.2.1] - 2026-10-28
 
 ### 🐛 Corregido

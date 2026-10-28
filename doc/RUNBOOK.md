@@ -206,38 +206,48 @@ taxide lint --specs=SPECS --chars=CHARS --items=ITEMS
 TAXIDE actúa como un compilador multi-objetivo unificado, reemplazando scripts externos de conversión:
 
 ```bash
-# 1. Exportación a formato NEXUS (.nex) para PAUP*, MrBayes y Mesquite
-taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=nexus -o matrix.nex
+D=examples/craspedacusta
 
-# 2. Exportación a formato TNT (.tnt) con directivas compactas xread y ccode
-taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=tnt -o matrix.tnt
+# 1. NEXUS (.nex) para PAUP*, MrBayes y Mesquite. Polimorfismo (12) vs incertidumbre {12};
+#    los caracteres IN/RN se discretizan a OM (--discretize sqrt|sturges|N)
+cabal run taxide-compile -- -i $D --target nexus -o matrix.nex
 
-# 3. Generación de monografías en lenguaje natural (Markdown / HTML)
-taxide describe --specs=SPECS --chars=CHARS --items=ITEMS --format=markdown -o flora.md
+# 2. TNT (.tnt) con xread, cnames y ccode (+ ordenado, - desordenado)
+cabal run taxide-compile -- -i $D --target tnt -o matrix.tnt
 
-# 4. Exportación numérica columnar a tensores binarios HDF5 / AVX-512
-taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=hdf5 -o matrix.h5
+# 3. Monografías en lenguaje natural (Markdown / HTML5). Opciones: --lang en|es,
+#    --omit-implicit, --no-units, --no-text, --no-headings
+cabal run taxide-compile -- -i $D --target natural --format md   -o flora.md
+cabal run taxide-compile -- -i $D --target natural --format html -o flora.html
+
+# 4. JSON/GeoJSON tipado (ingesta en PostGIS) y tensores binarios columnares
+#    alineados a 64 bytes (contenedor TAXIHPC1, no es un fichero HDF5)
+cabal run taxide-compile -- -i $D --target json -o matrix.json
+cabal run taxide-compile -- -i $D --target hdf5 -o matrix.hpc
 ```
+
+Si el linter reporta errores el compilador se detiene; use `--force` para compilar de todos modos. Los objetivos binarios (`dwca`, `hdf5`) exigen `--output`.
 
 ---
 
 ### 4.4 Exportación a Darwin Core Archive (DwC-A / GBIF)
 
-La compilación hacia el estándar internacional Darwin Core Archive proyecta de manera biyectiva la matriz resuelta hacia el **Esquema en Estrella (*Star Schema*)**:
+La compilación hacia el estándar internacional Darwin Core Archive proyecta de forma determinista (no biyectiva: se omiten las celdas `U` y `-`) la matriz resuelta hacia el **Esquema en Estrella (*Star Schema*)**:
 
 ```bash
-taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=dwca -o craspedacusta_dwca.zip
+cabal run taxide-compile -- -i examples/craspedacusta --target dwca -o craspedacusta_dwca.zip \
+  --title "Craspedacusta" --creator "Autor Apellido" --license CC-BY-4.0 --contact autor@example.org
 ```
 
 #### Estructura Interna del Archivo ZIP Generado en Memoria
 
 ```
 craspedacusta_dwca.zip
-├── meta.xml                  # Descriptor XML del Star Schema según TDWG
-├── eml.xml                   # Metadatos del dataset en EML 2.1.1 (DatasetMetadata)
 ├── taxon.txt                 # Core taxonómico (dwc:Taxon)
 ├── measurementorfact.txt     # Extensión relacional de mediciones y rasgos morfológicos
-└── description.txt           # Extensión de prosa morfológica y citas (gbif:Description)
+├── description.txt           # Extensión de prosa morfológica y citas (gbif:Description)
+├── meta.xml                  # Descriptor XML del Star Schema según TDWG
+└── eml.xml                   # Metadatos del dataset en EML 2.1.1 (DatasetMetadata)
 ```
 
 #### Campos Mapeados en el Archivo TSV

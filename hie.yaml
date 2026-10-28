@@ -16,4 +16,10 @@ cradle:
       component: "taxide-engine:exe:taxide-lint"
     - path: "./taxide-engine/test"
       component: "taxide-engine:test:taxide-engine-test"
+    - path: "./taxide-export/src"
+      component: "taxide-export:lib:taxide-export"
+    - path: "./taxide-export/app"
+      component: "taxide-export:exe:taxide-compile"
+    - path: "./taxide-export/test"
+      component: "taxide-export:test:taxide-export-test"
 

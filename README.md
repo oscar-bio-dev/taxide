@@ -108,13 +108,31 @@ cabal run taxide-lint -- -i examples/craspedacusta -v
 cabal run taxide-lint -- -i examples/craspedacusta --json
 ```
 
-### 4. Ejecutar las Pruebas Formales y de Propiedades
+### 4. Compilar a Formatos Cladísticos, Prosa, Darwin Core Archive, JSON y Binario HPC con `taxide-compile`
+```bash
+# Matriz NEXUS / TNT (los caracteres IN/RN se discretizan a OM: --discretize sqrt|sturges|N)
+cabal run taxide-compile -- -i examples/craspedacusta -t nexus -o craspedacusta.nex
+cabal run taxide-compile -- -i examples/craspedacusta -t tnt   -o craspedacusta.tnt
+
+# Descripciones en lenguaje natural (Markdown o HTML5; --lang en|es, --omit-implicit, --no-units...)
+cabal run taxide-compile -- -i examples/craspedacusta -t natural --format html -o craspedacusta.html
+
+# Darwin Core Archive determinista (taxon, measurementorfact, description, meta.xml, eml.xml)
+cabal run taxide-compile -- -i examples/craspedacusta -t dwca -o craspedacusta.zip \
+  --title "Craspedacusta" --creator "Autor Apellido" --license CC-BY-4.0
+
+# JSON/GeoJSON (PostGIS) y tensor binario columnar alineado a 64 bytes
+cabal run taxide-compile -- -i examples/craspedacusta -t json -o craspedacusta.json
+cabal run taxide-compile -- -i examples/craspedacusta -t hdf5 -o craspedacusta.hpc
+```
+
+### 5. Ejecutar las Pruebas Formales y de Propiedades
 ```bash
 # Correr pruebas unitarias (invariantes biológicas) y pruebas basadas en propiedades (Hedgehog)
 cabal test all --test-show-details=streaming
 ```
 
-### 5. Compilar la Especificación Formal a PDF
+### 6. Compilar la Especificación Formal a PDF
 ```bash
 # Compilar el manifiesto matemático (detección automática: pdflatex nativo o contenedor Docker)
 runhaskell doc/pdfltex.hs doc/taxide.tex
@@ -175,11 +193,12 @@ gantt
     Inyección de *IMPLICIT VALUES            :done, f2_3, after f2_2, 1M
     taxide-lint CLI                          :done, f2_4, after f2_3, 1M
     section Fase 3: Compiladores Multi-Target
-    Exportadores NEXUS & TNT                 :f3_1, after f2_4, 1M
-    Lenguaje Natural (Markdown/HTML)         :f3_2, after f3_1, 1M
-    Exportador HPC (HDF5 / AVX-512)          :f3_3, after f3_2, 1M
+    Exportadores NEXUS & TNT                 :done, f3_1, after f2_4, 1M
+    Lenguaje Natural (Markdown/HTML)         :done, f3_2, after f3_1, 1M
+    Darwin Core Archive (dwca) & JSON        :done, f3_3, after f3_2, 1M
+    Exportador HPC binario (64 B / AVX-512)  :done, f3_4, after f3_3, 1M
     section Fase 4: Motor Analítico Cladístico
-    Fitch Parsimony (Word64 Bitsets)         :f4_1, after f3_3, 1M
+    Fitch Parsimony (Word64 Bitsets)         :f4_1, after f3_4, 1M
     Sankoff/Wagner (Dynamic Programming)     :f4_2, after f4_1, 1M
     Distancia de Gower & Claves (Entropía)   :f4_3, after f4_2, 1M
     section Fase 5: TUI Interactiva (Brick)
@@ -215,11 +234,11 @@ gantt
   - Pruebas unitarias sobre invariantes de exclusión mutua en dependencias del DAG.
 * **🎯 Hito Entregable (Milestone 2):** Herramienta `taxide-lint` para auditoría y emisión de diagnósticos biológicos con tiempo de resolución $<50\text{ ms}$ en matrices de más de 500 taxones.
 
-#### 🟠 Fase 3: Compiladores Multi-Target e Integración HPC
+#### 🟢 Fase 3: Compiladores Multi-Target e Integración HPC [COMPLETADA]
 * **Paquete:** [`taxide-export`](taxide-export)
 * **Objetivos Técnicos:**
   - Exportador a NEXUS (`.nex`) con bloques `TAXA`, `CHARACTERS` (etiquetando `DATATYPE=STANDARD` y polimorfismos) y `ASSUMPTIONS` (`TYPESET`).
-  - Exportador a TNT (`.tnt`) con cabeceras compactas `xread`, pesos y `ccode`.
+  - Exportador a TNT (`.tnt`) con `xread`, polimorfismos `[12]`, `cnames` y `ccode` (`+` ordenados, `-` desordenados).
   - Módulo `Taxide.Export.DarwinCore` y bandera `--target dwca` en `taxide-compile` para proyectar la matriz resuelta al Esquema en Estrella (Star Schema) de GBIF:
     - Core `taxon.txt` (`dwc:Taxon` con `scientificName`, `scientificNameAuthorship` y variantes `#+` subordinadas vía `parentNameUsageID`).
     - Extensión `measurementorfact.txt` (`dwc:MeasurementOrFact` excluyendo estados `Unknown` e `Inapplicable`).
@@ -227,12 +246,12 @@ gantt
     - Generación en memoria de `meta.xml` y `eml.xml` empaquetados en un archivo ZIP determinista mediante `Codec.Archive.Zip` sin intermediación en disco.
   - Motor de síntesis en lenguaje natural que traduce atributos a prosa botánica/zoológica fluida en Markdown y HTML (reemplazando `TONAT`).
   - Serializador JSON/GeoJSON vía `aeson` con esquemas tipados listos para bases de datos relacionales y geoespaciales (PostGIS).
-  - Exportador HPC Columnar a HDF5/Binario alineado a 64 bytes para procesamiento SIMD/AVX-512 en motores numéricos externos.
+  - Exportador HPC columnar binario (`--target hdf5`, contenedor propio `TAXIHPC1`, no es un fichero HDF5) con cabecera y tensores `Word64`/`Double` alineados a 64 bytes para carga *zero-copy* con AVX-512.
 * **Estrategia de Pruebas:**
   - Validación externa de sintaxis cargando matrices generadas directamente en herramientas estándar (`paup`, `tnt`, `ncl`).
   - Pruebas de validación de esquema XML (`meta.xml`, `eml.xml`) y consistencia relacional TSV para paquetes Darwin Core Archive (`dwca`).
   - *Golden Tests* de descripciones en lenguaje natural contra publicaciones de referencia.
-* **🎯 Hito Entregable (Milestone 3):** Pipeline de compilación `taxide compile --target=[nexus|tnt|dwca|natural|json|hdf5]` totalmente automatizado.
+* **🎯 Hito Entregable (Milestone 3):** CLI `taxide-compile --target [nexus|tnt|natural|dwca|json|hdf5]` totalmente automatizado (entregado).
 
 #### 🔵 Fase 4: Motor Analítico Cladístico y Generador de Claves Dicotómicas
 * **Paquete:** [`taxide-engine`](taxide-engine)

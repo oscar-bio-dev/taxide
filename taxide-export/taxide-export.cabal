@@ -1,0 +1,89 @@
+cabal-version:      3.0
+name:               taxide-export
+version:            0.1.0.0
+synopsis:           Compilador multi-objetivo: NEXUS, TNT, prosa natural, Darwin Core Archive, JSON y binario HPC
+description:        Fase 3 de TAXIDE. Proyecta la matriz resuelta (ResolvedMatrix) hacia formatos
+                    cladísticos (NEXUS, TNT), descripciones en lenguaje natural (Markdown/HTML5),
+                    Darwin Core Archive determinista en memoria, JSON tipado y tensores binarios
+                    columnares alineados a 64 bytes.
+license:            Apache-2.0
+author:             TAXIDE Core Architecture Team
+maintainer:         core@taxide.org
+category:           Bioinformatics, Scientific Computing
+build-type:         Simple
+
+common common-options
+    default-language:   GHC2021
+    default-extensions:
+        StrictData
+        OverloadedStrings
+        DeriveGeneric
+        DeriveAnyClass
+        BangPatterns
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+
+library
+    import:             common-options
+    hs-source-dirs:     src
+    exposed-modules:
+        Taxide.Export.Common
+        Taxide.Export.Nexus
+        Taxide.Export.TNT
+        Taxide.Export.Natural
+        Taxide.Export.DarwinCore
+        Taxide.Export.Json
+        Taxide.Export.BinaryHPC
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        aeson >= 2.1,
+        bytestring >= 0.11,
+        containers >= 0.6,
+        text >= 2.0,
+        vector >= 0.13,
+        zip-archive >= 0.4
+
+executable taxide-compile
+    import:             common-options
+    hs-source-dirs:     app
+    main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        taxide-export,
+        bytestring >= 0.11,
+        text >= 2.0,
+        optparse-applicative >= 0.18,
+        filepath >= 1.4,
+        directory >= 1.3
+
+test-suite taxide-export-test
+    import:             common-options
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        taxide-export,
+        bytestring >= 0.11,
+        containers >= 0.6,
+        text >= 2.0,
+        aeson >= 2.1,
+        zip-archive >= 0.4,
+        tasty >= 1.4,
+        tasty-hunit >= 0.10

@@ -29,7 +29,7 @@
 }
 
 % --- Versión del documento (fecha fija para compilaciones reproducibles) ---
-\newcommand{\taxideversion}{0.2.1}
+\newcommand{\taxideversion}{0.3.0}
 \newcommand{\taxidedate}{28 de octubre de 2026}
 
 % --- Configuración para Listados de Código Haskell ---
@@ -113,7 +113,7 @@ Este documento es a la vez \emph{especificación normativa} y \emph{registro de 
 \small
 \caption{Estado de implementación de los componentes especificados (versión \taxideversion).}
 \label{tab:estado}
-\begin{tabularx}{\textwidth}{@{}l l X l@{}}
+\begin{tabularx}{\textwidth}{@{}X l l l@{}}
 \toprule
 \textbf{Componente} & \textbf{Paquete / Módulo} & \textbf{Sección} & \textbf{Estado} \\
 \midrule
@@ -129,7 +129,12 @@ Matriz resuelta columnar SoA & \texttt{Engine.Matrix} & \S\ref{sec:soa} & Implem
 Linter ontológico y cladístico & \texttt{Engine.Linter} & \S\ref{sec:linter} & Implementado \\
 Parsimonia de Fitch y Sankoff/Wagner & \texttt{taxide-engine} (Fase 4) & \S\ref{sec:algoritmos} & Especificado \\
 Coeficiente de Gower & \texttt{taxide-engine} (Fase 4) & \S\ref{sec:gower} & Especificado \\
-Proyección Darwin Core Archive & \texttt{taxide-export} (Fase 3) & \S\ref{sec:dwca} & Especificado \\
+Proyección Darwin Core Archive & \texttt{Export.DarwinCore} & \S\ref{sec:dwca} & Implementado \\
+Exportadores NEXUS y TNT & \texttt{Export.Nexus}, \texttt{Export.TNT} & \S\ref{sec:export} & Implementado \\
+Síntesis en lenguaje natural (Markdown/HTML5) & \texttt{Export.Natural} & \S\ref{sec:export} & Implementado \\
+Serializador JSON/GeoJSON & \texttt{Export.Json} & \S\ref{sec:export} & Implementado \\
+Contenedor binario columnar alineado a 64 B & \texttt{Export.BinaryHPC} & \S\ref{sec:export} & Implementado \\
+CLI \texttt{taxide-compile} & \texttt{taxide-export} & \S\ref{sec:export} & Implementado \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -367,14 +372,14 @@ Un carácter discreto es \emph{informativo para parsimonia} si y solo si al meno
 \texttt{TAX-DATA-002} & Aviso & Dos o más ítems \texttt{\#} con igual nombre y autoridad. \\
 \texttt{TAX-DATA-003} & Error & Un mismo carácter codificado más de una vez en un ítem (se conserva sólo el último valor). \\
 \texttt{TAX-WARN-001} & Aviso & Dos taxones con vectores resueltos idénticos (excluyendo \texttt{TE}). \\
-\texttt{TAX-CLAD-002} & Info & Exactamente dos clases de estado, una presente en un único taxón (autapomorfía). \\
+\texttt{TAX-CLAD-002} & Info & Carácter variable no informativo (Definición~\ref{def:informativo}): menos de dos estados presentes en $\ge 2$ taxones. \\
 \texttt{TAX-UNC-004} & Info & Celda omitida para un carácter declarado. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \begin{observacion}
-\texttt{TAX-CLAD-001} y \texttt{TAX-CLAD-002} detectan dos casos particulares de la Definición~\ref{def:informativo}. Una generalización natural es un diagnóstico que marque cualquier carácter no informativo (por ejemplo, un estado mayoritario y varias autapomorfías). Por su parte, \texttt{TAX-WARN-001} agrupa las filas por una firma de su vector resuelto en un \texttt{Map}, con coste $O(NM\log N)$ más el tamaño de la salida, en lugar de comparar todos los pares en $O(N^2 M)$. Los taxones indistinguibles producen ramas de longitud cero y politomías irresolubles en los análisis filogenéticos.
+\texttt{TAX-CLAD-001} y \texttt{TAX-CLAD-002} implementan íntegramente la Definición~\ref{def:informativo}: el primero detecta el carácter invariante y el segundo cualquier carácter variable con menos de dos estados presentes en al menos dos taxones (incluidas varias autapomorfías en estados distintos; la autapomorfía única conserva su localización en el taxón). Por su parte, \texttt{TAX-WARN-001} agrupa las filas por una firma de su vector resuelto en un \texttt{Map}, con coste $O(NM\log N)$ más el tamaño de la salida, en lugar de comparar todos los pares en $O(N^2 M)$. Los taxones indistinguibles producen ramas de longitud cero y politomías irresolubles en los análisis filogenéticos.
 \end{observacion}
 
 % =========================================================================
@@ -568,11 +573,55 @@ Los caracteres de texto libre (\texttt{TE}) y los párrafos generados por el mot
 \end{enumerate}
 
 % =========================================================================
+\section{Compiladores Multi-Objetivo (\texttt{taxide-export})}
+\label{sec:export}
+% =========================================================================
+
+El ejecutable \texttt{taxide-compile} aplica a la matriz resuelta una familia de proyecciones puras (sin ficheros temporales): $\Phi_{\text{fmt}} \colon \mathcal{M} \to \text{salida}$. La Tabla~\ref{tab:targets} resume los objetivos.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Objetivos de \texttt{taxide-compile --target}.}
+\label{tab:targets}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+\textbf{Objetivo} & \textbf{Salida} & \textbf{Semántica} \\
+\midrule
+\texttt{nexus} & \texttt{.nex} & Bloques \texttt{TAXA}, \texttt{CHARACTERS} y \texttt{ASSUMPTIONS}; polimorfismo \texttt{(12)}, incertidumbre \texttt{\{12\}}. \\
+\texttt{tnt} & \texttt{.tnt} & \texttt{xread}, \texttt{cnames} y \texttt{ccode}; ambos casos como \texttt{[12]}. \\
+\texttt{natural} & \texttt{.md}, \texttt{.html} & Prosa por taxón; subtítulos, unidades, texto \texttt{TE} y omisión de implícitos opcionales. \\
+\texttt{dwca} & \texttt{.zip} & Esquema en estrella de la Sección~\ref{sec:dwca}, reproducible byte a byte. \\
+\texttt{json} & \texttt{.json} & \texttt{FeatureCollection} GeoJSON con \texttt{geometry: null} y atributos en \texttt{properties} (ingesta en PostGIS). \\
+\texttt{hdf5} & binario & Contenedor propio \texttt{TAXIHPC1} (no es un fichero HDF5), tensores alineados a 64 bytes. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{NEXUS y TNT}
+Los estados DELTA $s \in \{1,\dots,n\}$ se emiten con el símbolo de índice $s-1$ (alfabeto \texttt{0-9A-Za-z} en NEXUS, hasta 62 estados; \texttt{0-9A-V} en TNT, hasta 32). Una celda $S$ se codifica según su naturaleza lógica:
+\begin{equation}
+\mathrm{cell}(S) =
+\begin{cases}
+\text{símbolo}(s) & S = \{s\},\\
+\texttt{(}\dots\texttt{)} \;/\; \texttt{[}\dots\texttt{]} & \text{si $S$ proviene de \texttt{\&} (polimorfismo simultáneo)},\\
+\texttt{\{}\dots\texttt{\}} \;/\; \texttt{[}\dots\texttt{]} & \text{si $S$ proviene de \texttt{/} o de un rango (incertidumbre)},\\
+\texttt{?},\; \texttt{-} & \texttt{U},\; \texttt{-}.
+\end{cases}
+\end{equation}
+donde la primera notación es NEXUS y la segunda TNT, que no distingue ambos casos; \texttt{V} se emite como polimorfismo de todos los estados. Los caracteres \texttt{UM}/\texttt{EUM} entran en \texttt{TYPESET} como \texttt{unord} (\texttt{ccode -}) y los \texttt{OM}/\texttt{EOM} como \texttt{ord} (\texttt{ccode +}). Los \texttt{TE} se omiten.
+
+Los caracteres \texttt{IN}/\texttt{RN} se discretizan a \texttt{OM} con $k$ clases según la regla elegida (Sección~\ref{sec:discretizacion}): con $v_{\min}$, $v_{\max}$ extremos de los valores representativos y $\Delta = (v_{\max}-v_{\min})/k$, la clase de $v$ es $1 + \min\!\big(k-1, \lfloor (v - v_{\min})/\Delta \rfloor\big)$. Las etiquetas de estado son los intervalos resultantes con sus unidades.
+
+\subsection{Contenedor binario columnar}
+Todos los campos son \textit{little-endian}. El archivo comienza por una cabecera de 64 bytes (firma \texttt{TAXIHPC1}, versión, marca de endianness, alineación, $N$, $M$, número de secciones, tamaño de cabecera y tamaño total), seguida de una tabla de secciones de 64 bytes por tensor. Cada tensor ---máscaras \texttt{Word64}, etiquetas \texttt{Word8}, cinco vectores \texttt{Double} por carácter cuantitativo, tipos de carácter y nombres de taxón--- comienza en un desplazamiento múltiplo de 64 y se rellena con ceros hasta el siguiente múltiplo, de modo que puede mapearse en memoria y cargarse con instrucciones AVX-512 alineadas sin copia.
+
+% =========================================================================
 \section{Conclusión y Visión de Futuro}
 % =========================================================================
 TAXIDE culmina la transición de la morfología taxonómica hacia la era del software científico formal. Al abandonar los envoltorios frágiles de ejecutables legados y fundamentar la infraestructura sobre tipos algebraicos, evaluación estricta controlada, algoritmos de optimización combinatoria en Haskell y conectividad nativa con la infraestructura global de biodiversidad (DwC-A/GBIF), TAXIDE ofrece a la comunidad biológica una herramienta de precisión matemática, auditabilidad y alto rendimiento.
 
-Las líneas de trabajo inmediatas derivadas de esta especificación son: (i) un diagnóstico general de caracteres no informativos (Definición~\ref{def:informativo}); (ii) la validación diferencial frente a CONFOR y \texttt{DIST}; y (iii) algoritmos de parsimonia conscientes de la inaplicabilidad \cite{brazeau2019}.
+Las líneas de trabajo inmediatas derivadas de esta especificación son: (i) la validación diferencial frente a CONFOR y \texttt{DIST}; (ii) la validación externa de los archivos NEXUS y TNT con PAUP*/TNT; y (iii) algoritmos de parsimonia conscientes de la inaplicabilidad \cite{brazeau2019}.
 
 % =========================================================================
 \begin{thebibliography}{99}
