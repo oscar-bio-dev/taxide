@@ -11,8 +11,8 @@ abstract: >-
   matrices (Gower coefficient), and cross-target compilation to NEXUS, TNT, JSON,
   and high-performance columnar binary formats (HDF5/AVX-512).
 type: software
-version: 0.1.0
-date-released: "2026-10-24"
+version: 0.4.0
+date-released: "2026-10-28"
 license: Apache-2.0
 repository-code: "https://github.com/ecotech/taxide"
 authors:
@@ -29,6 +29,8 @@ keywords:
   - "fitch-parsimony"
   - "sankoff-parsimony"
   - "gower-distance"
+  - "darwin-core"
+  - "gbif"
   - "terminal-ui"
 preferred-citation:
   type: article

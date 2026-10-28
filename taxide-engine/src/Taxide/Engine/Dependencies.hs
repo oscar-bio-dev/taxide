@@ -14,7 +14,7 @@ module Taxide.Engine.Dependencies
   , topologicalSortDAG
   ) where
 
-import Data.List (find, sortOn)
+import Data.List (find, nub, sortOn)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -56,7 +56,7 @@ buildAdjacencyMap rules = foldl addRule Map.empty rules
   where
     addRule acc (DependentRule c _ deps) =
       let currentDeps = Map.findWithDefault [] c acc
-          accWithCtrl = Map.insert c (currentDeps ++ deps) acc
+          accWithCtrl = Map.insert c (nub (currentDeps ++ deps)) acc
           -- Asegurar que los nodos destino también existan en el mapa
           accWithAll = foldl (\m d -> if Map.member d m then m else Map.insert d [] m) accWithCtrl deps
       in accWithAll
@@ -163,10 +163,12 @@ propagateTaxonRules rules taxon =
            else (currTaxon, accDiags)
 
     -- Un controlador está inhabilitado si una regla previa lo forzó a Inapplicable
+    -- o si ya se codificó explícitamente como '-'
     isInhibited cid attrs =
       case Map.lookup cid attrs of
-        Just (AttributedState _ (OriginInapplicableDependency _)) -> True
-        _                                                         -> False
+        Just (AttributedState _ (OriginInapplicableDependency _))          -> True
+        Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) _) -> True
+        _                                                                  -> False
 
     -- Extrae los estados biológicos activos del carácter controlador
     getObservedStates cid attrs =

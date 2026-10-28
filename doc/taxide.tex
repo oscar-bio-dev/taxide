@@ -29,7 +29,7 @@
 }
 
 % --- Versión del documento (fecha fija para compilaciones reproducibles) ---
-\newcommand{\taxideversion}{0.3.0}
+\newcommand{\taxideversion}{0.4.0}
 \newcommand{\taxidedate}{28 de octubre de 2026}
 
 % --- Configuración para Listados de Código Haskell ---
@@ -127,8 +127,11 @@ Discretización cuantitativa (RN) & \texttt{Engine.Discretize} & \S\ref{sec:disc
 Discretización cuantitativa (IN) & \texttt{Engine.Discretize} & \S\ref{sec:discretizacion} & Implementado \\
 Matriz resuelta columnar SoA & \texttt{Engine.Matrix} & \S\ref{sec:soa} & Implementado \\
 Linter ontológico y cladístico & \texttt{Engine.Linter} & \S\ref{sec:linter} & Implementado \\
-Parsimonia de Fitch y Sankoff/Wagner & \texttt{taxide-engine} (Fase 4) & \S\ref{sec:algoritmos} & Especificado \\
-Coeficiente de Gower & \texttt{taxide-engine} (Fase 4) & \S\ref{sec:gower} & Especificado \\
+Parsimonia de Fitch y Sankoff/Wagner & \texttt{Engine.Fitch}, \texttt{Engine.Sankoff} & \S\ref{sec:fitch}, \S\ref{sec:sankoff} & Implementado \\
+Índices CI, RI, RC y búsqueda SPR/TBR & \texttt{Engine.Sankoff}, \texttt{Engine.Search} & \S\ref{sec:indices}, \S\ref{sec:busqueda} & Implementado \\
+Coeficiente de Gower, UPGMA y NJ & \texttt{Engine.Gower} & \S\ref{sec:gower}, \S\ref{sec:busqueda} & Implementado \\
+Generador de claves por entropía de Shannon & \texttt{Engine.Key} & \S\ref{sec:claves} & Implementado \\
+CLIs \texttt{taxide-tree} y \texttt{taxide-key} & \texttt{taxide-engine} & \S\ref{sec:busqueda}, \S\ref{sec:claves} & Implementado \\
 Proyección Darwin Core Archive & \texttt{Export.DarwinCore} & \S\ref{sec:dwca} & Implementado \\
 Exportadores NEXUS y TNT & \texttt{Export.Nexus}, \texttt{Export.TNT} & \S\ref{sec:export} & Implementado \\
 Síntesis en lenguaje natural (Markdown/HTML5) & \texttt{Export.Natural} & \S\ref{sec:export} & Implementado \\
@@ -383,11 +386,11 @@ Un carácter discreto es \emph{informativo para parsimonia} si y solo si al meno
 \end{observacion}
 
 % =========================================================================
-\section{Fundamentos Matemáticos y Algorítmicos (Fase 4)}
+\section{Fundamentos Matemáticos y Algorítmicos}
 \label{sec:algoritmos}
 % =========================================================================
 
-Esta sección especifica los núcleos analíticos que consumirán la matriz resuelta.
+Esta sección especifica los núcleos analíticos implementados sobre la matriz resuelta.
 
 \subsection{Algoritmo de Fitch (Caracteres Multiestado Desordenados)}
 \label{sec:fitch}
@@ -502,6 +505,93 @@ Sea $D_{ij} = 1 - S_{ij}$ y $D^{\text{E}}_{ij} = \sqrt{1 - S_{ij}}$.
 \end{proposicion}
 
 El cálculo de la matriz completa cuesta $O(N^2 M)$. La equivalencia numérica con \texttt{DIST} es un objetivo a validar mediante pruebas diferenciales, no una propiedad ya demostrada.
+
+\subsection{Índices de Ajuste Cladístico: Consistencia y Retención}
+\label{sec:indices}
+Para cuantificar el nivel de sinapomorfía frente a la homoplasia (paralelismos y reversiones) sobre una topología $T$, TAXIDE evalúa para cada carácter discreto $k \in \{1, \dots, M\}$ tres magnitudes fundamentales:
+\begin{enumerate}
+    \item \textbf{Longitud observada $s_k = L_k(T)$:} el número mínimo de pasos evolutivos requeridos por el carácter $k$ sobre el árbol $T$, calculado mediante Fitch (\S\ref{sec:fitch}) para caracteres desordenados (\texttt{UM}, \texttt{EUM}) o Sankoff/Wagner (\S\ref{sec:sankoff}) para caracteres ordenados (\texttt{OM}, \texttt{EOM}, y cuantitativos discretizados \texttt{IN}, \texttt{RN}).
+    \item \textbf{Mínimo cambio teórico posible $m_k$:} la cota inferior intrínseca libre de homoplasia sobre cualquier árbol posible. En caracteres desordenados (\texttt{UM}, \texttt{EUM}), $m_k$ es el mínimo número de transiciones necesarias para conectar los conjuntos de estados observados en las hojas válidas (que se reduce a $|\bigcup_{u} S_u| - 1$ cuando cada hoja presenta un único estado). En caracteres ordenados aditivos (\texttt{OM}, \texttt{EOM}), $m_k = \max_{u} \min S_u - \min_{u} \max S_u$ (acotado inferiormente por $0$), esto es, la amplitud mínima entre el estado superior e inferior requeridos por las hojas válidas.
+    \item \textbf{Máximo cambio posible $g_k$:} la longitud del carácter $k$ evaluada sobre un árbol estrella (politomía total de las hojas válidas). En parsimonia de Fitch se tiene $g_k = N_{\text{válidas}} - \max_{a \in \mathcal{S}_k} |\{u : a \in S_u\}|$, mientras que en Sankoff/Wagner $g_k = \min_{a \in \mathcal{S}_k} \sum_{u} \min_{b \in S_u} w(a, b)$.
+\end{enumerate}
+
+\begin{definicion}[Índices de Consistencia, Retención y Homoplasia]
+El \textbf{Índice de Consistencia} de Kluge \& Farris \cite{kluge1969} mide la fracción de cambios libre de homoplasia, tanto por carácter ($ci_k = m_k / s_k$, con $ci_k = 1$ si $s_k = 0$) como para el conjunto de la matriz:
+\begin{equation}
+\label{eq:ci}
+CI(T) = \frac{\sum_{k=1}^M m_k}{\sum_{k=1}^M s_k}, \qquad HI(T) = 1 - CI(T),
+\end{equation}
+donde $HI(T)$ es el \textbf{Índice de Homoplasia}.
+
+El \textbf{Índice de Retención} de Farris \cite{farris1989} cuantifica la fracción de sinapomorfía potencial retenida como homología en el árbol, por carácter ($ri_k = (g_k - s_k)/(g_k - m_k)$ para $g_k > m_k$, y $ri_k = 1$ cuando $g_k = m_k$) y globalmente:
+\begin{equation}
+\label{eq:ri}
+RI(T) = \frac{\sum_{k=1}^M (g_k - s_k)}{\sum_{k=1}^M (g_k - m_k)}.
+\end{equation}
+Finalmente, el \textbf{Índice de Consistencia Reescalado} de Farris \cite{farris1989} pondera la consistencia anulando la contribución de caracteres autapomórficos ($ri_k = 0$):
+\begin{equation}
+\label{eq:rc}
+RC(T) = CI(T) \cdot RI(T).
+\end{equation}
+\end{definicion}
+
+\subsection{Búsqueda Topológica (Wagner, SPR, TBR) y Reconstrucción Fenética (UPGMA, NJ)}
+\label{sec:busqueda}
+Dado que el número de árboles bifurcados con raíz para $N$ taxones es $(2N - 3)!!$, la búsqueda exacta es intratable incluso para matrices moderadas. El módulo \texttt{Taxide.Engine.Search} implementa una estrategia en dos fases para máxima parsimonia:
+\begin{enumerate}
+    \item \textbf{Adición Secuencial de Wagner} \cite{farris1970}: partiendo del árbol inicial formado por los dos primeros taxones $(t_0, t_1)$, en cada paso $i \in \{2, \dots, N-1\}$ se evalúa la inserción de la hoja $t_i$ en cada arista $e \in E(T_{i-1})$ y como hermano de la raíz, seleccionando de manera determinista el árbol $T_i$ que minimiza la longitud total:
+    \begin{equation}
+    T_i = \arg\min_{T' \in \mathrm{Insert}(T_{i-1}, t_i)} L(T').
+    \end{equation}
+    \item \textbf{Refinamiento Heurístico por Vecindades Locales (SPR y TBR):} a partir del árbol de Wagner se aplica escalada de colina (\textit{steepest-descent hill-climbing}) explorando dos operadores topológicos clásicos:
+    \begin{itemize}
+        \item \textbf{SPR (\textit{Subtree Pruning and Regrafting}):} se poda un subárbol propio $S \subset T$, suprimiendo su nodo padre de grado 2, y se reinserta $S$ subdividiendo cualquier arista del árbol residual $T \setminus S$.
+        \item \textbf{TBR (\textit{Tree Bisection and Reconnection}):} generaliza SPR permitiendo re-enraizar el subárbol podado $S$ en cualquiera de sus aristas internas antes de reconectarlo a cualquier arista de $T \setminus S$.
+    \end{itemize}
+    En cada iteración, la evaluación de los árboles candidatos de la vecindad es puramente funcional e independiente, por lo que se paraleliza de forma determinista por lotes mediante estrategias de evaluación (\texttt{parListChunk 64 rdeepseq} de \texttt{Control.Parallel.Strategies}).
+\end{enumerate}
+
+Para el análisis fenético a partir de la matriz de distancias de Gower $D_{ij} = 1 - S_{ij}$ (\S\ref{sec:gower}), el módulo \texttt{Taxide.Engine.Gower} implementa dos algoritmos aglomerativos con estimación de longitudes de rama:
+\begin{enumerate}
+    \item \textbf{UPGMA (\textit{Unweighted Pair Group Method with Arithmetic Mean})} \cite{sokal1958}: asume reloj molecular/morfológico (ultrametricidad). En cada paso fusiona el par de clústeres activos $(A, B)$ con mínima distancia $D_{AB}$, situando el nodo padre a altura $h(A \cup B) = D_{AB}/2$, y actualiza la distancia hacia todo tercer clúster $C$ mediante el promedio ponderado por cardinalidad:
+    \begin{equation}
+    \label{eq:upgma}
+    D_{(A \cup B), C} = \frac{|A| \, D_{AC} + |B| \, D_{BC}}{|A| + |B|}.
+    \end{equation}
+    \item \textbf{Neighbor-Joining (NJ)} \cite{saitou1987}: método de evolución mínima que no asume ultrametricidad. Para $r$ clústeres activos, selecciona el par $(i, j)$ con $i \neq j$ que minimiza la matriz corregida por divergencia neta:
+    \begin{equation}
+    \label{eq:nj_q}
+    Q_{ij} = (r - 2) D_{ij} - \sum_{k=1}^r D_{ik} - \sum_{k=1}^r D_{jk}.
+    \end{equation}
+    Los clústeres $i$ y $j$ se unen a un nuevo nodo interno $u$ con longitudes de rama:
+    \begin{equation}
+    \label{eq:nj_branch}
+    \delta_{iu} = \frac{1}{2} D_{ij} + \frac{1}{2(r - 2)} \left( \sum_{k=1}^r D_{ik} - \sum_{k=1}^r D_{jk} \right), \qquad \delta_{ju} = D_{ij} - \delta_{iu},
+    \end{equation}
+    y la distancia desde $u$ hacia cada clúster restante $k$ se actualiza mediante la reducción de Studier--Keppler $D_{uk} = \frac{1}{2}(D_{ik} + D_{jk} - D_{ij})$.
+\end{enumerate}
+
+\subsection{Generación de Claves de Identificación mediante Entropía de Shannon}
+\label{sec:claves}
+Para reemplazar el ejecutable \texttt{KEY} de DELTA \cite{dallwitz1974}, el módulo \texttt{Taxide.Engine.Key} sintetiza claves de identificación construyendo recursivamente un árbol de decisión que particiona el conjunto de taxones candidatos $\mathcal{T}' \subseteq \mathcal{T}$.
+
+\begin{definicion}[Partición por compatibilidad y Ganancia de Información]
+Sea $\mathcal{T}' \subseteq \mathcal{T}$ un subconjunto de $|\mathcal{T}'| \ge 2$ taxones por discriminar, cuya incertidumbre a priori bajo distribución uniforme viene dada por la entropía de Shannon $H(\mathcal{T}') = \log_2 |\mathcal{T}'|$.
+
+Para un carácter discreto (o cuantitativo discretizado) $c$ con estados $\mathcal{S}_c = \{1, \dots, m_c\}$, un taxón $t \in \mathcal{T}'$ es compatible con el estado $s \in \mathcal{S}_c$ si el bit $s-1$ está activo en su máscara resuelta $\beta_{tc}$, o si su etiqueta es $\tau_{tc} \in \{\texttt{U}, \texttt{V}\}$ (incertidumbre total o variabilidad). Esto induce para cada estado el subconjunto hijo:
+\begin{equation}
+\label{eq:key_subset}
+\mathcal{T}'_s = \big\{\, t \in \mathcal{T}' \;:\; s \text{ es compatible con } (t, c) \,\big\}.
+\end{equation}
+Un taxón polimórfico o incierto se propaga a todas las ramas $s$ con las que es compatible, garantizando la \emph{completitud diagnóstica} (cualquier espécimen real del taxón alcanzará una hoja con su nombre).
+
+La ganancia de información esperada y la función objetivo penalizada por la duplicación de taxones polimórficos y por el costo de observación $w_c > 0$ se definen como:
+\begin{equation}
+\label{eq:key_score}
+\mathrm{Gain}(c; \mathcal{T}') = H(\mathcal{T}') - \sum_{s : \mathcal{T}'_s \neq \emptyset} \frac{|\mathcal{T}'_s|}{\sum_{r} |\mathcal{T}'_r|} \log_2 |\mathcal{T}'_s|, \qquad \mathrm{Score}(c; \mathcal{T}') = \frac{\mathrm{Gain}(c; \mathcal{T}')}{w_c \cdot \left( \frac{\sum_s |\mathcal{T}'_s|}{|\mathcal{T}'|} \right)}.
+\end{equation}
+En cada nodo de decisión se selecciona el carácter disponible $c^*$ que maximiza $\mathrm{Score}(c; \mathcal{T}')$ sujeto a que al menos dos estados produzcan subconjuntos propios ($\emptyset \subsetneq \mathcal{T}'_s \subsetneq \mathcal{T}'$). La recursión termina cuando $|\mathcal{T}'| = 1$ (hoja identificada) o cuando ningún carácter restante puede subdividir $\mathcal{T}'$ (hoja politómica de taxones indistinguibles).
+\end{definicion}
 
 % =========================================================================
 \section{Interoperabilidad Biodiversa: Proyección al Estándar Darwin Core Archive (DwC-A)}
@@ -632,6 +722,11 @@ Brazeau, M.~D., Guillerme, T. \& Smith, M.~R. (2019).
 An algorithm for morphological phylogenetic analysis with inapplicable data.
 \textit{Systematic Biology}, 68(4), 619--631.
 
+\bibitem{dallwitz1974}
+Dallwitz, M.~J. (1974).
+A flexible computer program for generating identification keys.
+\textit{Systematic Zoology}, 23(1), 50--57.
+
 \bibitem{dallwitz1980}
 Dallwitz, M.~J. (1980).
 A general system for coding taxonomic descriptions.
@@ -651,6 +746,11 @@ Dallwitz, M.~J., Paine, T.~A. \& Zurcher, E.~J. (1993 en adelante).
 Farris, J.~S. (1970).
 Methods for computing Wagner trees.
 \textit{Systematic Zoology}, 19(1), 83--92.
+
+\bibitem{farris1989}
+Farris, J.~S. (1989).
+The retention index and the rescaled consistency index.
+\textit{Cladistics}, 5(4), 417--419.
 
 \bibitem{fitch1971}
 Fitch, W.~M. (1971).
@@ -677,6 +777,11 @@ Kahn, A.~B. (1962).
 Topological sorting of large networks.
 \textit{Communications of the ACM}, 5(11), 558--562.
 
+\bibitem{kluge1969}
+Kluge, A.~G. \& Farris, J.~S. (1969).
+Quantitative phyletics and the evolution of anurans.
+\textit{Systematic Zoology}, 18(1), 1--32.
+
 \bibitem{maddison1993}
 Maddison, W.~P. (1993).
 Missing data versus missing characters in phylogenetic analysis.
@@ -692,10 +797,20 @@ Podani, J. (1999).
 Extending Gower's general coefficient of similarity to ordinal characters.
 \textit{Taxon}, 48(2), 331--340.
 
+\bibitem{saitou1987}
+Saitou, N. \& Nei, M. (1987).
+The neighbor-joining method: a new method for reconstructing phylogenetic trees.
+\textit{Molecular Biology and Evolution}, 4(4), 406--425.
+
 \bibitem{sankoff1975}
 Sankoff, D. (1975).
 Minimal mutation trees of sequences.
 \textit{SIAM Journal on Applied Mathematics}, 28(1), 35--42.
+
+\bibitem{sokal1958}
+Sokal, R.~R. \& Michener, C.~D. (1958).
+A statistical method for evaluating systematic relationships.
+\textit{University of Kansas Science Bulletin}, 38(22), 1409--1438.
 
 \bibitem{strong1999}
 Strong, E.~E. \& Lipscomb, D. (1999).

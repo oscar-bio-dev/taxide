@@ -266,23 +266,39 @@ craspedacusta_dwca.zip
 
 ---
 
-### 4.5 Motores de Inferencia Cladística y Claves Dicotómicas
+### 4.5 Motores de Inferencia Cladística y Claves Dicotómicas (`taxide-tree` y `taxide-key`)
 
-#### Búsqueda de Árboles Filogenéticos de Máxima Parsimonia
-
-```bash
-# Ejecutar optimización de parsimonia con 8 hilos nativos
-taxide tree --input=SPECS,CHARS,ITEMS --algorithm=fitch --threads=8 -o best_tree.nwk
-```
-- **Caracteres `UM`:** Procesados mediante el núcleo de **Fitch en hardware** utilizando bitmasks vectorizables `Word64` en tiempo $O(1)$ por nodo.
-- **Caracteres `OM`:** Procesados mediante la recurrencia de Bellman de **Sankoff/Wagner** sobre vectores inmutables sin encajonar (`Data.Vector.Unboxed Double`).
-
-#### Generación de Claves Dicotómicas de Identificación
+#### Búsqueda de Árboles Filogenéticos de Máxima Parsimonia y Fenética de Gower (`taxide-tree`)
 
 ```bash
-taxide key --input=SPECS,CHARS,ITEMS --entropy=shannon -o clave_dicotomica.txt
+D=examples/craspedacusta
+
+# 1. Máxima parsimonia (Fitch + Sankoff/Wagner) con búsqueda SPR o TBR e informe completo (L, CI, RI, RC)
+cabal run taxide-tree -- -i $D --method parsimony --search spr --format report
+cabal run taxide-tree -- -i $D --method parsimony --search tbr --discretize sturges --format ascii
+
+# 2. Reconstrucción fenética sobre matriz de distancias de Gower (UPGMA o Neighbor-Joining)
+cabal run taxide-tree -- -i $D --method upgma --format report
+cabal run taxide-tree -- -i $D --method nj    --format newick -o craspedacusta_nj.nwk
 ```
-- Evalúa en cada bifurcación el carácter que maximiza la **ganancia de información (Entropía de Shannon)**, minimizando el número promedio de pasos de observación requeridos para determinar un espécimen.
+- **Caracteres `UM`/`EUM`:** Procesados mediante el núcleo de **Fitch en hardware** (`Taxide.Engine.Fitch`) utilizando máscaras `Word64` en tiempo $O(1)$ por nodo y reconstrucción ancestral de dos pases.
+- **Caracteres `OM`/`EOM` e `IN`/`RN`:** Procesados mediante programación dinámica post-orden de **Sankoff/Wagner** (`Taxide.Engine.Sankoff`) sobre `Data.Vector.Unboxed Double`, calculando $s_k, m_k, g_k$ y los índices globales $CI, RI, RC, HI$.
+- **Búsqueda Topológica (`Taxide.Engine.Search`):** Adición secuencial de Wagner seguida de escalada de colina en vecindades SPR y TBR paralelizada por lotes (`parListChunk 64 rdeepseq`).
+- **Fenética (`Taxide.Engine.Gower`):** Coeficiente general de similitud de Gower (Jaccard en bits, Podani ordinal y rango continuo) acoplado a UPGMA y Neighbor-Joining (NJ).
+
+#### Generación de Claves Dicotómicas de Identificación (`taxide-key`)
+
+```bash
+D=examples/craspedacusta
+
+# 1. Clave pareada clásica (numeración 1(0). ...) en español o inglés
+cabal run taxide-key -- -i $D --format bracketed --lang es
+
+# 2. Clave indentada jerárquica o documento Markdown
+cabal run taxide-key -- -i $D --format indented  --lang en
+cabal run taxide-key -- -i $D --format md        --lang es -o clave_craspedacusta.md
+```
+- Evalúa en cada bifurcación el carácter que maximiza la **ganancia de información de Shannon** penalizada por duplicación polimórfica y costo de observación $\mathrm{Score}(c; \mathcal{T}')$, garantizando que el 100% de los taxones sean alcanzables en las hojas.
 
 ---
 

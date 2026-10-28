@@ -42,6 +42,12 @@ library
         Taxide.Engine.Matrix
         Taxide.Engine.Linter
         Taxide.Engine.Pipeline
+        Taxide.Engine.Tree
+        Taxide.Engine.Fitch
+        Taxide.Engine.Sankoff
+        Taxide.Engine.Search
+        Taxide.Engine.Gower
+        Taxide.Engine.Key
     build-depends:
         base >= 4.18 && < 5,
         taxide-core,
@@ -51,6 +57,7 @@ library
         containers >= 0.6,
         vector >= 0.13,
         deepseq >= 1.4,
+        parallel >= 3.2,
         hashable >= 1.4,
         prettyprinter >= 1.7,
         filepath >= 1.4,
@@ -61,6 +68,42 @@ executable taxide-lint
     import:             common-options
     hs-source-dirs:     app
     main-is:            Main.hs
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        text >= 2.0,
+        containers >= 0.6,
+        optparse-applicative >= 0.18,
+        filepath >= 1.4,
+        directory >= 1.3,
+        time >= 1.12
+
+executable taxide-tree
+    import:             common-options
+    hs-source-dirs:     app
+    main-is:            TreeMain.hs
+    ghc-options:
+        -threaded
+        -rtsopts
+        -with-rtsopts=-N
+    build-depends:
+        base >= 4.18 && < 5,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        text >= 2.0,
+        containers >= 0.6,
+        optparse-applicative >= 0.18,
+        filepath >= 1.4,
+        directory >= 1.3,
+        time >= 1.12
+
+executable taxide-key
+    import:             common-options
+    hs-source-dirs:     app
+    main-is:            KeyMain.hs
     build-depends:
         base >= 4.18 && < 5,
         taxide-core,

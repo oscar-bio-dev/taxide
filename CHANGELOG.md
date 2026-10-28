@@ -7,6 +7,29 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [0.4.0] - 2026-10-28
+
+### 🚀 Añadido
+
+#### `taxide-engine` (Fase 4: Motor Analítico Cladístico, Fenética de Gower y Generador de Claves Dicotómicas)
+- **`Taxide.Engine.Tree`:** ADT estricto `PhyloTree a` con soporte para longitudes de rama opcionales (`Maybe Double`), serializadores puros a formato estándar Newick (`renderNewick`) y arte ASCII/Unicode (`renderAsciiTree`), y operadores estructurales puros de inserción, poda, bisección y reconexión (`insertLeafEverywhere`, `pruneAllSubtrees`, `rerootSubtreeAll`, `sprNeighbors`, `tbrNeighbors`).
+- **`Taxide.Engine.Fitch`:** algoritmo de máxima parsimonia de Fitch en $O(1)$ por nodo sobre máscaras `VU.Vector Word64` y etiquetas `VU.Vector PseudoTag`, cálculo exacto de longitud observada $s_k$, cambio mínimo libre de homoplasia $m_k$ y cambio máximo en árbol estrella $g_k$, y reconstrucción de estados ancestrales en dos pases (post-orden y pre-orden, `reconstructFitchAncestors`).
+- **`Taxide.Engine.Sankoff`:** programación dinámica post-orden de Sankoff/Wagner sobre `VU.Vector Double` con soporte para costos aditivos $w(i,j)=|i-j|$ y matrices de paso generales (`StepMatrix`), proyección automática de caracteres cuantitativos (`IN`, `RN`) a `OM` vía `Taxide.Engine.Discretize`, y evaluador unificado `evaluateTreeParsimony` con cálculo de índices globales $L(T)$, $CI$ (Kluge & Farris, 1969), $RI$ y $RC$ (Farris, 1989) y $HI$.
+- **`Taxide.Engine.Search`:** construcción determinista por adición secuencial de Wagner (`wagnerBuild`) y búsqueda heurística de subida de colina en vecindades SPR (`searchSPR`) y TBR (`searchTBR`), paralelizada de forma determinista por lotes con `Control.Parallel.Strategies` (`withStrategy (parListChunk 64 rdeepseq)`).
+- **`Taxide.Engine.Gower`:** matriz de similitud general de Gower $S_{ij}$ y distancias $D_{ij} = 1 - S_{ij}$ y $D^{\text{E}}_{ij} = \sqrt{1 - S_{ij}}$ (Jaccard con `popCount` para `UM`/`EUM`, extensión ordinal de Podani para `OM`/`EOM` y normalización por rango $R_k$ para `IN`/`RN`), junto con reconstrucción de fenogramas con longitudes de rama mediante **UPGMA** (`buildUPGMA`) y **Neighbor-Joining** (`buildNeighborJoining`).
+- **`Taxide.Engine.Key`:** generador recursivo de claves de identificación mediante ganancia de información de Shannon penalizada por duplicación polimórfica y costo de observación $\mathrm{Score}(c; \mathcal{T}')$, con propagación completa de taxones polimórficos/inciertos y renderizadores puros hacia Clave Pareada (`renderBracketedKey`), Clave Indentada (`renderIndentedKey`) y Markdown (`renderMarkdownKey`) en inglés (`LangEn`) y español (`LangEs`).
+- **Ejecutables CLI `taxide-tree` y `taxide-key`:** herramientas de línea de comandos para inferencia filogenética (`--method parsimony|upgma|nj`, `--search wagner|spr|tbr`, `--format newick|ascii|report`) y síntesis de claves dicotómicas (`--format bracketed|indented|md`, `--lang en|es`).
+- **Suite `taxide-engine-test` ampliada (38 pruebas):** pruebas unitarias de Fitch, Sankoff, índices $CI/RI/RC$, recuperación topológica con SPR/TBR, reconstrucción exacta UPGMA/NJ sobre matrices ultramétricas y aditivas, y pruebas basadas en propiedades con `Hedgehog` para invariantes métricas de Gower y completitud del 100% en claves dicotómicas.
+
+### 🐛 Corregido
+- **`Taxide.Engine.Dependencies`:** `isInhibited` reconoce ahora también controladores codificados explícitamente con `-` (`PseudoState Inapplicable`) para garantizar la clausura transitiva, y `buildAdjacencyMap` deduplica aristas (`nub`) evitando multigrafos.
+
+### 📚 Documentación
+- `doc/taxide.tex` actualizado a v0.4.0 con las subsecciones formales 5.4 (Índices CI, RI, RC, HI), 5.5 (Wagner, SPR, TBR, UPGMA y NJ) y 5.6 (Claves por Entropía de Shannon), Tabla 1 con toda la Fase 4 en estado **Implementado** y bibliografía clásica ampliada.
+- `CITATION.cff` actualizado a v0.4.0 (`2026-10-28`) incluyendo palabras clave `darwin-core` y `gbif`.
+
+---
+
 ## [0.3.0] - 2026-10-28
 
 ### 🚀 Añadido

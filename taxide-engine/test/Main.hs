@@ -23,6 +23,7 @@ import Test.Tasty
 import Test.Tasty.Hedgehog
 import Test.Tasty.HUnit hiding (assert)
 
+import Taxide.Core.Character (CharacterDef, mkMultistateChar, mkNumericChar)
 import Taxide.Core.Invariants (collectActiveStates)
 import Taxide.Core.Item (ItemDef (..), ItemType (..), mkPrimaryItem, mkVariantItem)
 import Taxide.Core.Specs (DependentRule (..), ImplicitRule (..), SpecsDef (..), emptySpecs)
@@ -51,15 +52,59 @@ import Taxide.Engine.Discretize
   , discretizeQuantitative
   , discretizeTaxaValues
   )
+import Taxide.Engine.Fitch
+  ( FitchCharResult (..)
+  , evaluateFitchCharacter
+  , fitchFinalMask
+  , reconstructFitchAncestors
+  )
+import Taxide.Engine.Gower
+  ( buildNeighborJoining
+  , buildUPGMA
+  , computeGowerMatrix
+  , fromDistanceFunction
+  , lookupDistance
+  )
 import Taxide.Engine.Implicits (injectImplicits)
+import Taxide.Engine.Key
+  ( KeyLang (..)
+  , buildIdentificationKey
+  , defaultKeyOptions
+  , keyLeafTaxa
+  , renderBracketedKey
+  , renderIndentedKey
+  , renderMarkdownKey
+  )
 import Taxide.Engine.Matrix
   ( ColumnarMatrix (..)
   , isCellInapplicable
   , lookupDiscreteCell
   , tagInapplicable
+  , tagValid
   )
 import Taxide.Engine.Pipeline (runPipelinePure)
+import Taxide.Engine.Sankoff
+  ( SankoffCharResult (..)
+  , TreeEvaluation (..)
+  , evaluateSankoffCharacter
+  , evaluateTreeParsimony
+  )
+import Taxide.Engine.Search
+  ( SearchResult (..)
+  , searchSPR
+  , searchTBR
+  , wagnerBuild
+  )
+import Taxide.Engine.Tree
+  ( PhyloTree (..)
+  , mkLeaf
+  , mkNode
+  , renderAsciiTree
+  , renderNewick
+  , treeLeaves
+  )
 import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..), resolveVariants)
+import qualified Data.Vector.Unboxed as VU
 
 main :: IO ()
 main = defaultMain tests
@@ -75,9 +120,17 @@ tests = testGroup "Taxide.Engine Test Suite"
       , testCladisticAndOntologicalLinter
       , testRegressionFixes
       ]
-  , testGroup "Property-Based Tests (Hedgehog): Invariantes Matemáticas y SoA"
+  , testGroup "Unit Tests: Fase 4 (Fitch, Sankoff, SPR/TBR, Gower, UPGMA/NJ, Claves)"
+      [ testFitchAndSankoffParsimony
+      , testTopologicalSearchSprTbr
+      , testGowerUpgmaAndNj
+      , testShannonIdentificationKey
+      ]
+  , testGroup "Property-Based Tests (Hedgehog): Invariantes Matemáticas, SoA y Fase 4"
       [ testProperty "Invariante DAG: Celda dependiente siempre Inapplicable si controlador dispara" propDagInactivation
       , testProperty "Preservación de dimensiones y SoA en la transposición" propMatrixDimensions
+      , testProperty "Gower: D_ii = 0, simetría D_ij = D_ji y acotamiento en [0, 1]" propGowerMetricInvariants
+      , testProperty "Clave dicotómica: 100% de taxones distinguibles presentes en las hojas" propKeyCompleteness
       ]
   ]
 
@@ -576,7 +629,348 @@ testRegressionFixes = testGroup "Regresiones de defectos corregidos"
           item = mkPrimaryItem "Taxon_Z" [(1, mkState 1), (1, mkState 2)]
           (_, _, diags) = runPipelinePure specs [item]
       length (filter (\d -> diagCode d == "TAX-DATA-003") diags) @?= 1
+
+  , testCase "Clausura transitiva con '-' explícito en controlador intermedio y reglas duplicadas" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 25
+            , specDependencies  =
+                [ DependentRule 9 (Set.singleton 2) [10]
+                , DependentRule 9 (Set.singleton 3) [10]
+                , DependentRule 10 (Set.singleton 2) [20]
+                ]
+            }
+          taxon = mkPrimaryItem "Taxon_ExplicitDash"
+            [ (10, AttrStates Nothing (PseudoState Inapplicable Nothing))
+            , (20, mkState 1)
+            ]
+          (taxa, _, diags) = runPipelinePure specs [taxon]
+      length (filter (\d -> diagCode d == "TAX-DEP-002") diags) @?= 1
+      case taxa of
+        (t : _) ->
+          case Map.lookup 20 (rtAttributes t) of
+            Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) _) -> pure ()
+            other -> assertFailure ("Se esperaba Inapplicable para 20, pero se obtuvo: " ++ show other)
+        [] -> assertFailure "taxa no debe estar vacío"
   ]
+
+--------------------------------------------------------------------------------
+-- 8. Pruebas Unitarias Fase 4: Fitch, Sankoff, SPR/TBR, Gower/UPGMA/NJ y Claves
+--------------------------------------------------------------------------------
+
+testFitchAndSankoffParsimony :: TestTree
+testFitchAndSankoffParsimony = testGroup "Parsimonia de Fitch y Sankoff/Wagner e Índices CI/RI/RC"
+  [ testCase "Sinapomorfía limpia en 4 taxones ((0,1),(2,3)): s_k=1, m_k=1, g_k=2 => CI=1.0, RI=1.0" $ do
+      let specs = emptySpecs
+            { specNumCharacters   = 1
+            , specMaxNumberStates = 2
+            , specCharTypes       = Map.fromList [(1, UM)]
+            , specNumbersOfStates = Map.fromList [(1, 2)]
+            }
+          items =
+            [ mkPrimaryItem "T0" [(1, mkState 1)]
+            , mkPrimaryItem "T1" [(1, mkState 1)]
+            , mkPrimaryItem "T2" [(1, mkState 2)]
+            , mkPrimaryItem "T3" [(1, mkState 2)]
+            ]
+          (taxa, mat, _) = runPipelinePure specs items
+          optimalTree    = mkNode (mkNode (mkLeaf 0) (mkLeaf 1)) (mkNode (mkLeaf 2) (mkLeaf 3))
+          fitchRes       = evaluateFitchCharacter specs mat 1 optimalTree
+          evalRes        = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat optimalTree
+
+      fcrSteps fitchRes @?= 1
+      fcrMinSteps fitchRes @?= 1
+      fcrMaxSteps fitchRes @?= 2
+      assertApprox "Total Length" 1.0 (teTotalLength evalRes)
+      assertApprox "CI" 1.0 (teConsistencyIndex evalRes)
+      assertApprox "RI" 1.0 (teRetentionIndex evalRes)
+      assertApprox "RC" 1.0 (teRescaledCI evalRes)
+      assertApprox "HI" 0.0 (teHomoplasyIndex evalRes)
+
+  , testCase "Topología homoplásica ((0,2),(1,3)): s_k=2, m_k=1, g_k=2 => CI=0.5, RI=0.0" $ do
+      let specs = emptySpecs
+            { specNumCharacters   = 1
+            , specMaxNumberStates = 2
+            , specCharTypes       = Map.fromList [(1, UM)]
+            , specNumbersOfStates = Map.fromList [(1, 2)]
+            }
+          items =
+            [ mkPrimaryItem "T0" [(1, mkState 1)]
+            , mkPrimaryItem "T1" [(1, mkState 1)]
+            , mkPrimaryItem "T2" [(1, mkState 2)]
+            , mkPrimaryItem "T3" [(1, mkState 2)]
+            ]
+          (taxa, mat, _) = runPipelinePure specs items
+          homoplasticTree = mkNode (mkNode (mkLeaf 0) (mkLeaf 2)) (mkNode (mkLeaf 1) (mkLeaf 3))
+          fitchRes        = evaluateFitchCharacter specs mat 1 homoplasticTree
+          evalRes         = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat homoplasticTree
+
+      fcrSteps fitchRes @?= 2
+      fcrMinSteps fitchRes @?= 1
+      fcrMaxSteps fitchRes @?= 2
+      assertApprox "Total Length" 2.0 (teTotalLength evalRes)
+      assertApprox "CI" 0.5 (teConsistencyIndex evalRes)
+      assertApprox "RI" 0.0 (teRetentionIndex evalRes)
+      assertApprox "RC" 0.0 (teRescaledCI evalRes)
+      assertApprox "HI" 0.5 (teHomoplasyIndex evalRes)
+
+  , testCase "Sankoff/Wagner ordenado (OM): transición 1 <-> 3 cuesta 2 pasos y calcula m_k=2, g_k=4" $ do
+      let specs = emptySpecs
+            { specNumCharacters   = 1
+            , specMaxNumberStates = 3
+            , specCharTypes       = Map.fromList [(1, OM)]
+            , specNumbersOfStates = Map.fromList [(1, 3)]
+            }
+          items =
+            [ mkPrimaryItem "T0" [(1, mkState 1)]
+            , mkPrimaryItem "T1" [(1, mkState 1)]
+            , mkPrimaryItem "T2" [(1, mkState 3)]
+            , mkPrimaryItem "T3" [(1, mkState 3)]
+            ]
+          (taxa, mat, _) = runPipelinePure specs items
+          optTree  = mkNode (mkNode (mkLeaf 0) (mkLeaf 1)) (mkNode (mkLeaf 2) (mkLeaf 3))
+          badTree  = mkNode (mkNode (mkLeaf 0) (mkLeaf 2)) (mkNode (mkLeaf 1) (mkLeaf 3))
+          sresOpt  = evaluateSankoffCharacter specs mat 1 optTree
+          sresBad  = evaluateSankoffCharacter specs mat 1 badTree
+          evalOpt  = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat optTree
+          evalBad  = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat badTree
+
+      assertApprox "s_k opt" 2.0 (scrSteps sresOpt)
+      assertApprox "m_k opt" 2.0 (scrMinSteps sresOpt)
+      assertApprox "g_k opt" 4.0 (scrMaxSteps sresOpt)
+      assertApprox "CI opt" 1.0 (teConsistencyIndex evalOpt)
+      assertApprox "RI opt" 1.0 (teRetentionIndex evalOpt)
+
+      assertApprox "s_k bad" 4.0 (scrSteps sresBad)
+      assertApprox "CI bad" 0.5 (teConsistencyIndex evalBad)
+      assertApprox "RI bad" 0.0 (teRetentionIndex evalBad)
+
+  , testCase "Segundo pase pre-orden de Fitch reconstruye máscara ancestral y renderiza Newick/ASCII" $ do
+      let col  = VU.fromList [1, 1, 2, 2]
+          tags = VU.replicate 4 tagValid
+          tree = mkNode (mkNode (mkLeaf 0) (mkLeaf 1)) (mkNode (mkLeaf 2) (mkLeaf 3))
+          anc  = reconstructFitchAncestors 2 col tags tree
+          nwk  = renderNewick (fmap (\i -> "T" <> showT i) tree)
+          asc  = renderAsciiTree (fmap (\i -> "T" <> showT i) tree)
+      fitchFinalMask anc @?= 3 -- Unión {1, 2} en la raíz
+      nwk @?= "((T0,T1),(T2,T3));"
+      assertBool "ASCII tree contiene conectores Unicode" ("├── " `T.isInfixOf` asc && "└── " `T.isInfixOf` asc)
+  ]
+
+testTopologicalSearchSprTbr :: TestTree
+testTopologicalSearchSprTbr = testGroup "Búsqueda Topológica (Wagner, SPR y TBR)"
+  [ testCase "Partiendo de una topología subóptima, searchSPR y searchTBR recuperan el árbol óptimo" $ do
+      let specs = emptySpecs
+            { specNumCharacters   = 4
+            , specMaxNumberStates = 2
+            , specCharTypes       = Map.fromList [(1, UM), (2, UM), (3, OM), (4, UM)]
+            , specNumbersOfStates = Map.fromList [(1, 2), (2, 2), (3, 2), (4, 2)]
+            }
+          -- Clados verdaderos: (0,1) y (2,3) y (4,5)
+          items =
+            [ mkPrimaryItem "T0" [(1, mkState 1), (2, mkState 1), (3, mkState 1), (4, mkState 1)]
+            , mkPrimaryItem "T1" [(1, mkState 1), (2, mkState 1), (3, mkState 1), (4, mkState 1)]
+            , mkPrimaryItem "T2" [(1, mkState 1), (2, mkState 2), (3, mkState 2), (4, mkState 1)]
+            , mkPrimaryItem "T3" [(1, mkState 1), (2, mkState 2), (3, mkState 2), (4, mkState 1)]
+            , mkPrimaryItem "T4" [(1, mkState 2), (2, mkState 2), (3, mkState 2), (4, mkState 2)]
+            , mkPrimaryItem "T5" [(1, mkState 2), (2, mkState 2), (3, mkState 2), (4, mkState 2)]
+            ]
+          (taxa, mat, _) = runPipelinePure specs items
+          -- Topología inicial deliberadamente subóptima (mezclando los clados)
+          suboptimalTree =
+            mkNode
+              (mkNode (mkLeaf 0) (mkNode (mkLeaf 2) (mkLeaf 4)))
+              (mkNode (mkLeaf 1) (mkNode (mkLeaf 3) (mkLeaf 5)))
+          subEval = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat suboptimalTree
+          sprRes  = searchSPR SquareRootRule UseCenterVal specs taxa mat suboptimalTree
+          tbrRes  = searchTBR SquareRootRule UseCenterVal specs taxa mat suboptimalTree
+          wagTree = wagnerBuild SquareRootRule UseCenterVal specs taxa mat
+          wagEval = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat wagTree
+
+      assertBool "El árbol inicial es subóptimo (L > 4)" (teTotalLength subEval > 4.0)
+      assertApprox "SPR alcanza longitud mínima L = 4.0" 4.0 (teTotalLength (srEvaluation sprRes))
+      assertApprox "SPR alcanza CI = 1.0" 1.0 (teConsistencyIndex (srEvaluation sprRes))
+      assertApprox "SPR alcanza RI = 1.0" 1.0 (teRetentionIndex (srEvaluation sprRes))
+      assertApprox "TBR alcanza longitud mínima L = 4.0" 4.0 (teTotalLength (srEvaluation tbrRes))
+      assertApprox "Wagner alcanza longitud mínima L = 4.0" 4.0 (teTotalLength wagEval)
+  ]
+
+testGowerUpgmaAndNj :: TestTree
+testGowerUpgmaAndNj = testGroup "Distancia de Gower y Reconstrucción Fenética (UPGMA y NJ)"
+  [ testCase "UPGMA reconstruye exactamente la topología y ramas de una matriz ultramétrica de 4 taxones" $ do
+      -- Árbol ultramétrico: ((0:0.1, 1:0.1):0.2, (2:0.15, 3:0.15):0.15)
+      -- Distancias entre clados: D(0,1) = 0.2, D(2,3) = 0.3, D({0,1},{2,3}) = 0.6
+      let distFn i j
+            | i == j = 0.0
+            | (i == 0 && j == 1) || (i == 1 && j == 0) = 0.2
+            | (i == 2 && j == 3) || (i == 3 && j == 2) = 0.3
+            | otherwise = 0.6
+          dm = fromDistanceFunction 4 distFn
+          upgmaTree = buildUPGMA dm
+
+      treeLeaves upgmaTree @?= [0, 1, 2, 3]
+      case upgmaTree of
+        PhyloNode (PhyloNode (PhyloLeaf 0 (Just b0)) (PhyloLeaf 1 (Just b1)) (Just bL))
+                  (PhyloNode (PhyloLeaf 2 (Just b2)) (PhyloLeaf 3 (Just b3)) (Just bR))
+                  Nothing -> do
+          assertApprox "b0" 0.10 b0
+          assertApprox "b1" 0.10 b1
+          assertApprox "b2" 0.15 b2
+          assertApprox "b3" 0.15 b3
+          assertApprox "bL" 0.20 bL
+          assertApprox "bR" 0.15 bR
+        other -> assertFailure ("Topología UPGMA inesperada: " ++ show other)
+
+  , testCase "Neighbor-Joining reconstruye exactamente un árbol de 4 taxones desde una matriz aditiva" $ do
+      -- Árbol aditivo no ultramétrico: ((0:0.1, 1:0.2):0.15, (2:0.12, 3:0.28):0.15)
+      -- D(0,1) = 0.30, D(2,3) = 0.40
+      -- D(0,2) = 0.1 + 0.3 + 0.12 = 0.52, D(0,3) = 0.1 + 0.3 + 0.28 = 0.68
+      -- D(1,2) = 0.2 + 0.3 + 0.12 = 0.62, D(1,3) = 0.2 + 0.3 + 0.28 = 0.78
+      let distFn i j =
+            let a = min i j
+                b = max i j
+            in case (a, b) of
+                 (0, 1) -> 0.30
+                 (2, 3) -> 0.40
+                 (0, 2) -> 0.52
+                 (0, 3) -> 0.68
+                 (1, 2) -> 0.62
+                 (1, 3) -> 0.78
+                 _      -> 0.0
+          dm = fromDistanceFunction 4 distFn
+          njTree = buildNeighborJoining dm
+
+      treeLeaves njTree @?= [0, 1, 2, 3]
+      case njTree of
+        PhyloNode (PhyloNode (PhyloLeaf 0 (Just b0)) (PhyloLeaf 1 (Just b1)) (Just bL))
+                  (PhyloNode (PhyloLeaf 2 (Just b2)) (PhyloLeaf 3 (Just b3)) (Just bR))
+                  Nothing -> do
+          assertApprox "b0" 0.10 b0
+          assertApprox "b1" 0.20 b1
+          assertApprox "b2" 0.12 b2
+          assertApprox "b3" 0.28 b3
+          assertApprox "bL + bR" 0.30 (bL + bR)
+        other -> assertFailure ("Topología NJ inesperada: " ++ show other)
+  ]
+
+testShannonIdentificationKey :: TestTree
+testShannonIdentificationKey = testGroup "Generador de Claves Dicotómicas por Entropía de Shannon"
+  [ testCase "El 100% de los taxones aparecen en las hojas y se renderizan en Bracketed, Indented y Markdown" $ do
+      let specs = emptySpecs
+            { specNumCharacters   = 3
+            , specMaxNumberStates = 2
+            , specCharTypes       = Map.fromList [(1, UM), (2, UM), (3, RN)]
+            , specNumbersOfStates = Map.fromList [(1, 2), (2, 2)]
+            }
+          chars :: [CharacterDef]
+          chars =
+            [ mkMultistateChar 1 UM "wings" [(1, "present"), (2, "absent")]
+            , mkMultistateChar 2 UM "antennae" [(1, "filiform"), (2, "clavate")]
+            , mkNumericChar 3 RN "body length" (Just "mm")
+            ]
+          items =
+            [ mkPrimaryItem "Species_A" [(1, mkState 1), (2, mkState 1), (3, AttrReal Nothing (mkSingleStat 5.0) Nothing)]
+            , mkPrimaryItem "Species_B" [(1, mkState 1), (2, mkState 2), (3, AttrReal Nothing (mkSingleStat 10.0) Nothing)]
+            , mkPrimaryItem "Species_C" [(1, mkState 2), (2, mkState 1), (3, AttrReal Nothing (mkSingleStat 15.0) Nothing)]
+            , mkPrimaryItem "Species_D" [(1, mkState 2), (2, mkState 2), (3, AttrReal Nothing (mkSingleStat 20.0) Nothing)]
+            ]
+          (taxa, mat, _) = runPipelinePure specs items
+          keyTree = buildIdentificationKey defaultKeyOptions specs chars taxa mat
+          leafSet = Set.fromList (keyLeafTaxa keyTree)
+          expectedSet = Set.fromList ["Species_A", "Species_B", "Species_C", "Species_D"]
+          txtBrack = renderBracketedKey LangEn keyTree
+          txtInd   = renderIndentedKey LangEn keyTree
+          txtMdEs  = renderMarkdownKey LangEs keyTree
+
+      leafSet @?= expectedSet
+      assertBool "Clave pareada contiene 1(0)." ("1(0)." `T.isInfixOf` txtBrack)
+      assertBool "Clave indentada contiene los 4 taxones"
+        (all (`T.isInfixOf` txtInd) ["Species_A", "Species_B", "Species_C", "Species_D"])
+      assertBool "Clave Markdown en español contiene título"
+        ("# Clave de Identificación" `T.isInfixOf` txtMdEs)
+  ]
+
+--------------------------------------------------------------------------------
+-- 9. Propiedades Hedgehog de Fase 4 (Gower y Claves)
+--------------------------------------------------------------------------------
+
+-- | Propiedad: Para toda matriz resuelta, la distancia de Gower cumple:
+-- D_ii = 0, D_ij = D_ji y D_ij in [0, 1].
+propGowerMetricInvariants :: Property
+propGowerMetricInvariants = property $ do
+  nTaxa <- forAll $ Gen.int (Range.linear 2 8)
+  st1   <- forAll $ Gen.list (Range.singleton nTaxa) (Gen.word8 (Range.linear 1 4))
+  st2   <- forAll $ Gen.list (Range.singleton nTaxa) (Gen.word8 (Range.linear 1 4))
+  vals3 <- forAll $ Gen.list (Range.singleton nTaxa) (Gen.double (Range.linearFrac 1.0 50.0))
+
+  let specs = emptySpecs
+        { specNumCharacters   = 3
+        , specMaxNumberStates = 4
+        , specCharTypes       = Map.fromList [(1, UM), (2, OM), (3, RN)]
+        , specNumbersOfStates = Map.fromList [(1, 4), (2, 4)]
+        }
+      items =
+        [ mkPrimaryItem ("T" <> showT idx)
+            [ (1, mkState s1)
+            , (2, mkState s2)
+            , (3, AttrReal Nothing (mkSingleStat v3) Nothing)
+            ]
+        | (idx, s1, s2, v3) <- zip4 [1 .. nTaxa] st1 st2 vals3
+        ]
+      (_, mat, _) = runPipelinePure specs items
+      dm = computeGowerMatrix specs mat
+
+  forM_ [0 .. nTaxa - 1] $ \i -> do
+    let dII = lookupDistance dm i i
+    assert (abs dII <= 1.0e-12)
+    forM_ [0 .. nTaxa - 1] $ \j -> do
+      let dIJ = lookupDistance dm i j
+          dJI = lookupDistance dm j i
+      assert (abs (dIJ - dJI) <= 1.0e-12)
+      assert (dIJ >= 0.0 && dIJ <= 1.0)
+  where
+    zip4 (a:as) (b:bs) (c:cs) (d:ds) = (a, b, c, d) : zip4 as bs cs ds
+    zip4 _ _ _ _ = []
+    forM_ xs f = sequence_ (map f xs)
+
+-- | Propiedad: Para todo dataset con taxones distinguibles, el 100% de los taxones
+-- aparecen en las hojas de la clave dicotómica generada.
+propKeyCompleteness :: Property
+propKeyCompleteness = property $ do
+  nTaxa <- forAll $ Gen.int (Range.linear 2 8)
+  -- Codificamos cada taxón i (0..nTaxa-1) con sus bits binarios en 3 caracteres UM
+  -- garantizando que todos los vectores de estados sean mutuamente distinguibles
+  let bitState idx b = if (idx `div` (2 ^ b)) `mod` 2 == 0 then 1 else 2
+      specs = emptySpecs
+        { specNumCharacters   = 3
+        , specMaxNumberStates = 2
+        , specCharTypes       = Map.fromList [(1, UM), (2, UM), (3, UM)]
+        , specNumbersOfStates = Map.fromList [(1, 2), (2, 2), (3, 2)]
+        }
+      chars =
+        [ mkMultistateChar 1 UM "c1" [(1, "s1"), (2, "s2")]
+        , mkMultistateChar 2 UM "c2" [(1, "s1"), (2, "s2")]
+        , mkMultistateChar 3 UM "c3" [(1, "s1"), (2, "s2")]
+        ]
+      items =
+        [ mkPrimaryItem ("Taxon_" <> showT i)
+            [ (1, mkState (bitState i (0 :: Int)))
+            , (2, mkState (bitState i (1 :: Int)))
+            , (3, mkState (bitState i (2 :: Int)))
+            ]
+        | i <- [0 .. nTaxa - 1]
+        ]
+      (taxa, mat, _) = runPipelinePure specs items
+      keyTree = buildIdentificationKey defaultKeyOptions specs chars taxa mat
+      expected = Set.fromList ["Taxon_" <> showT i | i <- [0 .. nTaxa - 1]]
+      actual   = Set.fromList (keyLeafTaxa keyTree)
+
+  actual === expected
+
+assertApprox :: String -> Double -> Double -> Assertion
+assertApprox lbl expected actual =
+  assertBool
+    (lbl ++ ": se esperaba " ++ show expected ++ " pero se obtuvo " ++ show actual)
+    (abs (expected - actual) <= 1.0e-6)
 
 --------------------------------------------------------------------------------
 -- Helpers

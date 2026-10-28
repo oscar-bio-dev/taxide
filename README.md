@@ -126,13 +126,26 @@ cabal run taxide-compile -- -i examples/craspedacusta -t json -o craspedacusta.j
 cabal run taxide-compile -- -i examples/craspedacusta -t hdf5 -o craspedacusta.hpc
 ```
 
-### 5. Ejecutar las Pruebas Formales y de Propiedades
+### 5. Reconstruir Cladogramas, Fenogramas y Claves Dicotómicas con `taxide-tree` y `taxide-key`
+```bash
+# Inferencia de máxima parsimonia (Fitch + Sankoff/Wagner) con búsqueda heurística SPR/TBR
+cabal run taxide-tree -- -i examples/craspedacusta --method parsimony --search spr --format report
+
+# Reconstrucción fenética sobre matriz de Gower mediante UPGMA o Neighbor-Joining (NJ)
+cabal run taxide-tree -- -i examples/craspedacusta --method nj --format newick -o craspedacusta.nwk
+
+# Generación de clave dicotómica óptima por entropía de Shannon (bracketed, indented o md)
+cabal run taxide-key -- -i examples/craspedacusta --format bracketed --lang es
+cabal run taxide-key -- -i examples/craspedacusta --format md --lang es -o clave_craspedacusta.md
+```
+
+### 6. Ejecutar las Pruebas Formales y de Propiedades
 ```bash
 # Correr pruebas unitarias (invariantes biológicas) y pruebas basadas en propiedades (Hedgehog)
 cabal test all --test-show-details=streaming
 ```
 
-### 6. Compilar la Especificación Formal a PDF
+### 7. Compilar la Especificación Formal a PDF
 ```bash
 # Compilar el manifiesto matemático (detección automática: pdflatex nativo o contenedor Docker)
 runhaskell doc/pdfltex.hs doc/taxide.tex
@@ -198,9 +211,9 @@ gantt
     Darwin Core Archive (dwca) & JSON        :done, f3_3, after f3_2, 1M
     Exportador HPC binario (64 B / AVX-512)  :done, f3_4, after f3_3, 1M
     section Fase 4: Motor Analítico Cladístico
-    Fitch Parsimony (Word64 Bitsets)         :f4_1, after f3_4, 1M
-    Sankoff/Wagner (Dynamic Programming)     :f4_2, after f4_1, 1M
-    Distancia de Gower & Claves (Entropía)   :f4_3, after f4_2, 1M
+    Fitch Parsimony (Word64 Bitsets)         :done, f4_1, after f3_4, 1M
+    Sankoff/Wagner (Dynamic Programming)     :done, f4_2, after f4_1, 1M
+    Distancia de Gower & Claves (Entropía)   :done, f4_3, after f4_2, 1M
     section Fase 5: TUI Interactiva (Brick)
     Viewport Virtualizado & 2D Cursor        :f5_1, after f4_3, 1M
     Linter Reactivo & Visor Filogenético     :f5_2, after f5_1, 1M
@@ -253,18 +266,18 @@ gantt
   - *Golden Tests* de descripciones en lenguaje natural contra publicaciones de referencia.
 * **🎯 Hito Entregable (Milestone 3):** CLI `taxide-compile --target [nexus|tnt|natural|dwca|json|hdf5]` totalmente automatizado (entregado).
 
-#### 🔵 Fase 4: Motor Analítico Cladístico y Generador de Claves Dicotómicas
+#### 🟢 Fase 4: Motor Analítico Cladístico y Generador de Claves Dicotómicas [COMPLETADA]
 * **Paquete:** [`taxide-engine`](taxide-engine)
 * **Objetivos Técnicos:**
-  - Máxima parsimonia de Fitch implementada a nivel de hardware con operaciones sobre `Word64` bitsets ($O(1)$ por nodo).
-  - Algoritmo de Sankoff/Wagner para caracteres ordenados mediante programación dinámica sobre árboles con matrices de costo de paso.
-  - Búsqueda heurística de árboles (TBR / SPR) paralelizada de forma determinista con `Control.Parallel.Strategies` (`parListChunk 64 rdeepseq`).
-  - Matriz de similitud y distancias fenéticas de Gower para agrupamiento UPGMA y Neighbor-Joining.
-  - Generador de claves dicotómicas óptimas basado en ganancia de información (Entropía de Shannon), penalizando costos empíricos de observación de caracteres.
+  - Máxima parsimonia de Fitch implementada a nivel de hardware con operaciones sobre `Word64` bitsets ($O(1)$ por nodo) y reconstrucción ancestral de dos pases (`Taxide.Engine.Fitch`).
+  - Algoritmo de Sankoff/Wagner para caracteres ordenados (`OM`/`EOM`) y cuantitativos discretizados (`IN`/`RN`) mediante programación dinámica sobre árboles con matrices de costo de paso y cálculo de índices globales $L(T), CI, RI, RC, HI$ (`Taxide.Engine.Sankoff`).
+  - Construcción por adición secuencial de Wagner y búsqueda heurística de árboles (SPR / TBR) paralelizada de forma determinista con `Control.Parallel.Strategies` (`parListChunk 64 rdeepseq`) (`Taxide.Engine.Search`).
+  - Matriz de similitud y distancias fenéticas de Gower (Jaccard a nivel de bits, Podani ordinal y normalización por rango) para agrupamiento UPGMA y Neighbor-Joining (`Taxide.Engine.Gower`).
+  - Generador de claves dicotómicas óptimas basado en ganancia de información (Entropía de Shannon), penalizando duplicación polimórfica y costos empíricos de observación, con salida Pareada (`bracketed`), Indentada (`indented`) y Markdown (`md`) (`Taxide.Engine.Key`).
 * **Estrategia de Pruebas:**
-  - Verificación de parsimonia: comprobación de longitud de árbol óptimo contra benchmarks conocidos en PAUP* y TNT (coincidencia de puntuación al 100%).
-  - Verificación de unicidad de rutas en claves dicotómicas generadas sin ambigüedad biológica.
-* **🎯 Hito Entregable (Milestone 4):** Subcomandos `taxide tree` y `taxide key` que generan cladogramas y claves de identificación en segundos.
+  - Verificación de parsimonia e índices $s_k, m_k, g_k, CI, RI, RC$ sobre topologías óptimas y homoplásicas, y recuperación del árbol óptimo mediante SPR y TBR.
+  - Verificación de propiedades métricas de Gower ($D_{ii}=0, D_{ij}=D_{ji}, D_{ij}\in[0,1]$) y reconstrucción exacta con UPGMA/NJ, además de completitud del 100% de taxones en claves generadas (con `Hedgehog`).
+* **🎯 Hito Entregable (Milestone 4):** Ejecutables `taxide-tree` y `taxide-key` que generan cladogramas, fenogramas y claves de identificación en milisegundos (entregados).
 
 #### 🟣 Fase 5: Terminal User Interface (TUI) y Linter en Vivo
 * **Paquetes:** [`taxide-tui`](taxide-tui), [`taxide-app`](taxide-app)
@@ -326,11 +339,12 @@ taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=dwca  -o crasp
 # Generar descripciones taxonómicas en lenguaje natural (Markdown)
 taxide describe --items=ITEMS -o flora_descriptions.md
 
-# Búsqueda de cladogramas de máxima parsimonia
-taxide tree --input=SPECS,CHARS,ITEMS --algorithm=fitch --threads=8 -o best_tree.nwk
+# Búsqueda de cladogramas de máxima parsimonia (Wagner, SPR, TBR) y fenogramas (UPGMA, NJ)
+cabal run taxide-tree -- -i examples/craspedacusta --method parsimony --search spr --format report
+cabal run taxide-tree -- -i examples/craspedacusta --method nj --format newick -o best_tree.nwk
 
-# Generar clave dicotómica de identificación basada en ganancia de información
-taxide key --input=SPECS,CHARS,ITEMS --entropy=shannon -o identification_key.txt
+# Generar clave dicotómica de identificación basada en ganancia de información de Shannon
+cabal run taxide-key -- -i examples/craspedacusta --format bracketed --lang es -o identification_key.txt
 ```
 
 ---
