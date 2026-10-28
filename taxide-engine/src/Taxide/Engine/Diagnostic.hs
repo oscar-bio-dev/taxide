@@ -22,6 +22,7 @@ module Taxide.Engine.Diagnostic
   , engineErrorToDiagnostic
   , invariantCharDiag
   , autapomorphyDiag
+  , nonInformativeCharDiag
   , uncodedCharDiag
   , duplicateTaxonDiag
   , incoherentRangeDiag
@@ -161,6 +162,22 @@ autapomorphyDiag cid autTaxon countCommon =
     , diagMessage  = "Autapomorfía no informativa para parsimonia: en el carácter " <> T.pack (show cid)
                   <> ", el taxón '" <> autTaxon <> "' posee un estado derivado único frente a "
                   <> T.pack (show countCommon) <> " taxones con estado basal; útil para diagnóstico pero no resuelve clados."
+    }
+
+-- | TAX-CLAD-002: Carácter no informativo para parsimonia (Definición 4.1):
+-- menos de dos estados aparecen cada uno en al menos dos taxones.
+-- Argumentos: carácter, nº de estados presentes, nº de estados autapomórficos
+-- (presentes en un único taxón) y nº de taxones con valor válido.
+nonInformativeCharDiag :: Int -> Int -> Int -> Int -> LintDiagnostic
+nonInformativeCharDiag cid nStates nSingleton nValid =
+  LintDiagnostic
+    { diagCode     = "TAX-CLAD-002"
+    , diagSeverity = SeverityInfo
+    , diagLocation = charLoc cid
+    , diagMessage  = "Carácter no informativo para parsimonia: de los " <> T.pack (show nStates)
+                  <> " estados presentes en " <> T.pack (show nValid) <> " taxones, "
+                  <> T.pack (show nSingleton) <> " son autapomórficos (en un único taxón) y menos de dos "
+                  <> "aparecen en al menos dos taxones; tiene la misma longitud en todas las topologías."
     }
 
 -- | TAX-DATA-001: Carácter no codificado en ningún taxón.

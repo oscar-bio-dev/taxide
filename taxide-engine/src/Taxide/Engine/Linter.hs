@@ -19,6 +19,7 @@ module Taxide.Engine.Linter
   , lintIndistinguishableTaxa
   ) where
 
+import Data.Bits (testBit)
 import Data.List (sort, tails)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
@@ -37,6 +38,7 @@ import Taxide.Engine.Diagnostic
   , incoherentRangeDiag
   , indistinguishableTaxaDiag
   , invariantCharDiag
+  , nonInformativeCharDiag
   , uncodedCharDiag
   )
 import Taxide.Engine.Matrix
@@ -89,9 +91,13 @@ lintInvariantCharacters mat =
          []                -> False
      ]
 
--- | TAX-CLAD-002 (Info): Autapomorfías No Informativas para Parsimonia.
--- Detecta caracteres cualitativos donde todos los taxones comparten un mismo
--- estado basal, excepto un único taxón con un estado derivado singular.
+-- | TAX-CLAD-002 (Info): Caracteres No Informativos para Parsimonia.
+-- Implementa la Definición 4.1: un carácter discreto es informativo si y solo si
+-- al menos dos estados distintos aparecen, cada uno, en al menos dos taxones.
+-- Se reporta cualquier carácter variable (con ≥2 estados presentes) que no lo
+-- cumple, incluidos los casos con varias autapomorfías en estados distintos.
+-- El caso particular de una única autapomorfía frente a un estado basal común
+-- conserva su diagnóstico localizado en el taxón autapomórfico.
 lintAutapomorphies :: ResolvedMatrix -> [LintDiagnostic]
 lintAutapomorphies mat =
   let nTaxa = cmNumTaxa mat
@@ -104,7 +110,8 @@ lintAutapomorphies mat =
                          then names V.! autIdx
                          else "Taxón " <> T.pack (show autIdx)
            in [ autapomorphyDiag cid tName countCommon ]
-         Nothing -> []
+         Nothing ->
+           [ nonInformativeCharDiag cid (Map.size stateCounts) singletons (length validEntries) ]
      | (cid, col) <- Map.toList (cmDiscreteCols mat)
      , isQualitative (Map.lookup cid typeMap)
      , let tags = Map.findWithDefault VU.empty cid (cmDiscreteTags mat)
@@ -113,13 +120,23 @@ lintAutapomorphies mat =
                           , i < VU.length tags
                           , tags VU.! i == tagValid
                           ]
-     , length validEntries >= 3
+     , length validEntries >= 2
+     , let stateCounts = stateOccurrences (map snd validEntries)
+     , let informative = Map.size (Map.filter (>= 2) stateCounts)
+     , let singletons = Map.size (Map.filter (== 1) stateCounts)
+     , Map.size stateCounts >= 2
+     , informative < 2
      ]
   where
+    -- Número de taxones en los que aparece cada estado (bit) del carácter.
+    stateOccurrences :: [Word64] -> Map.Map Int Int
+    stateOccurrences masks =
+      Map.fromListWith (+) [ (b, 1) | m <- masks, b <- [0 .. 63], testBit m b ]
+
     findAutapomorphy :: [(Int, Word64)] -> Maybe (Int, Int)
     findAutapomorphy entries =
       let valGroups = Map.fromListWith (++) [ (val, [idx]) | (idx, val) <- entries ]
-      in if Map.size valGroups == 2
+      in if length entries >= 3 && Map.size valGroups == 2
            then case [ (val, idxs) | (val, idxs) <- Map.toList valGroups, length idxs == 1 ] of
                   [(_autVal, [autIdx])] ->
                     let countCommon = length entries - 1

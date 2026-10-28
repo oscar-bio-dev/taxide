@@ -18,6 +18,7 @@ module Taxide.Engine.Discretize
   , extractValue
   , discretizeQuantitative
   , discretizeTaxaValues
+  , quantitativeRange
   ) where
 
 import Control.DeepSeq (NFData)

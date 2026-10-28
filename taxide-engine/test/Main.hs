@@ -354,13 +354,42 @@ testCladisticAndOntologicalLinter = testGroup "Linter Cladístico y Ontológico 
           (_, _, diags) = runPipelinePure specs taxa
           autDiags = filter (\d -> diagCode d == "TAX-CLAD-002") diags
 
-      length autDiags @?= 1
-      case autDiags of
+      -- Carácter 1: una única autapomorfía (Taxon_C); carácter 2: tres autapomorfías
+      -- en estados distintos (caso generalizado de la Definición 4.1).
+      length autDiags @?= 2
+      case filter (\d -> locCharId (diagLocation d) == Just 1) autDiags of
         (d : _) -> do
           diagSeverity d @?= SeverityInfo
           locTaxon (diagLocation d) @?= Just "Taxon_C"
-          locCharId (diagLocation d) @?= Just 1
-        [] -> assertFailure "Se esperaba nota TAX-CLAD-002"
+        [] -> assertFailure "Se esperaba nota TAX-CLAD-002 para el carácter 1"
+      length (filter (\d -> locCharId (diagLocation d) == Just 2) autDiags) @?= 1
+
+  , testCase "TAX-CLAD-002 (generalizado): un estado repetido y varias autapomorfías no es informativo" $ do
+      -- Estados: 1,1,2,3 -> sólo el estado 1 aparece en >= 2 taxones.
+      let specs = emptySpecs
+            { specNumCharacters = 1
+            , specCharTypes     = Map.fromList [(1, UM)]
+            }
+          taxa = [ mkPrimaryItem "A" [(1, mkState 1)]
+                 , mkPrimaryItem "B" [(1, mkState 1)]
+                 , mkPrimaryItem "C" [(1, mkState 2)]
+                 , mkPrimaryItem "D" [(1, mkState 3)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+      length (filter (\d -> diagCode d == "TAX-CLAD-002") diags) @?= 1
+
+  , testCase "TAX-CLAD-002: un carácter informativo (dos estados en >= 2 taxones) no se reporta" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 1
+            , specCharTypes     = Map.fromList [(1, UM)]
+            }
+          taxa = [ mkPrimaryItem "A" [(1, mkState 1)]
+                 , mkPrimaryItem "B" [(1, mkState 1)]
+                 , mkPrimaryItem "C" [(1, mkState 2)]
+                 , mkPrimaryItem "D" [(1, mkState 2)]
+                 ]
+          (_, _, diags) = runPipelinePure specs taxa
+      length (filter (\d -> diagCode d == "TAX-CLAD-002") diags) @?= 0
 
   , testCase "TAX-DATA-001: Carácter 100% no codificado emite advertencia Warning" $ do
       let specs = emptySpecs
