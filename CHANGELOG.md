@@ -7,6 +7,28 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [0.2.1] - 2026-10-28
+
+### 🐛 Corregido
+
+#### `taxide-engine`
+- **Tiempo de ejecución del pipeline:** `runPipeline` medía ~0 ms por evaluación perezosa; ahora fuerza el resultado (`evaluate . force`) antes de cerrar el cronómetro.
+- **Propagación topológica y clausura transitiva (`Taxide.Engine.Dependencies`):** las reglas se aplican en el orden topológico calculado por Kahn y un controlador ya forzado a `-` por un antecesor dispara a sus dependientes (p. ej. `9,2 10,3 20,1` → dos `TAX-DEP-002` y carácter 20 inaplicable).
+- **Discretización de caracteres `IN`:** `discretizeTaxaValues` ahora acepta `AttrInteger` además de `AttrReal`.
+- **Pérdida silenciosa de estados:** el bitset admite ahora 64 estados (estándar DELTA, antes 62) y un estado fuera de `[1, 64]` emite `TAX-BND-002` en lugar de descartarse.
+- **Carácter repetido en un ítem:** se reporta como `TAX-DATA-003` (antes se conservaba el último valor sin aviso) en ítems primarios, variantes y variantes huérfanas.
+
+### ⚡ Rendimiento
+- `TAX-WARN-001` agrupa taxones por firma de fila en un `Map` (de $O(N^2M)$ a $O(NM\log N)$ + salida).
+
+### 🧪 Pruebas
+- Motor: 25 pruebas (5 nuevas de regresión; la prueba de cascada ahora verifica el carácter 20 y los dos diagnósticos).
+
+### 📚 Documentación
+- `doc/taxide.tex` reescrito y actualizado a v0.2.1 (estado de implementación, catálogo de diagnósticos, capacidad del bitset).
+
+---
+
 ## [0.2.0] - 2026-10-24
 
 ### 🚀 Añadido

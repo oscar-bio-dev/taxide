@@ -127,6 +127,22 @@ discretizeTaxaValues
 discretizeTaxaValues cid method target taxa =
   let samples = [ (rtIndex t, sr)
                 | t <- taxa
-                , Just (AttributedState (AttrReal _ sr _) _) <- [Map.lookup cid (rtAttributes t)]
+                , Just (AttributedState attr _) <- [Map.lookup cid (rtAttributes t)]
+                , Just sr <- [quantitativeRange attr]
                 ]
   in discretizeQuantitative cid method target samples
+
+-- | Extrae el rango cuantitativo de un atributo real (@RN@) o entero (@IN@),
+-- normalizando ambos a @StatRange Double@.
+quantitativeRange :: RawAttribute -> Maybe (StatRange Double)
+quantitativeRange (AttrReal _ sr _) = Just sr
+quantitativeRange (AttrInteger _ sr) = Just (fmap' sr)
+  where
+    fmap' r = StatRange
+      { srAbsoluteMin = fromIntegral <$> srAbsoluteMin r
+      , srNormalMin   = fromIntegral (srNormalMin r)
+      , srCenterVal   = fromIntegral <$> srCenterVal r
+      , srNormalMax   = fromIntegral (srNormalMax r)
+      , srAbsoluteMax = fromIntegral <$> srAbsoluteMax r
+      }
+quantitativeRange _ = Nothing

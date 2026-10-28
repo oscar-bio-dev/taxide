@@ -27,7 +27,7 @@ import GHC.Generics (Generic)
 import Taxide.Core.Item (ItemDef (..), ItemType (..))
 import Taxide.Core.Types (RawAttribute, StateId)
 import Taxide.Engine.Diagnostic
-  ( EngineError (OrphanVariantError)
+  ( EngineError (DuplicateCharacterError, OrphanVariantError)
   , LintDiagnostic
   , engineErrorToDiagnostic
   )
@@ -82,8 +82,9 @@ resolveVariants items = go 1 Nothing items [] []
     go _ _ [] accTaxa accDiags =
       (reverse accTaxa, reverse accDiags)
 
-    go !idx mLastPrimary (item : rest) accTaxa accDiags =
-      case itemType item of
+    go !idx mLastPrimary (item : rest) accTaxa accDiags0 =
+      let accDiags = reverse (duplicateCharDiags item) ++ accDiags0
+      in case itemType item of
         PrimaryItem ->
           let explicitAttrs = Map.fromList (itemAttributes item)
               resolvedMap = Map.map (`AttributedState` OriginExplicit) explicitAttrs
@@ -129,3 +130,11 @@ resolveVariants items = go 1 Nothing items [] []
                     , rtComments   = itemComments item
                     }
               in go (idx + 1) mLastPrimary rest (taxon : accTaxa) accDiags
+
+    -- Un carácter repetido dentro de un ítem descarta silenciosamente todos los
+    -- valores salvo el último ('Map.fromList'); se reporta como TAX-DATA-003.
+    duplicateCharDiags item =
+      [ engineErrorToDiagnostic (DuplicateCharacterError (itemName item) cid n)
+      | (cid, n) <- Map.toList (Map.fromListWith (+) [(c, 1 :: Int) | (c, _) <- itemAttributes item])
+      , n > 1
+      ]

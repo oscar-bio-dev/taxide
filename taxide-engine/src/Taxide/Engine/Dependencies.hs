@@ -14,7 +14,7 @@ module Taxide.Engine.Dependencies
   , topologicalSortDAG
   ) where
 
-import Data.List (find)
+import Data.List (find, sortOn)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -113,7 +113,15 @@ findCycle graph nodes =
                Just cycleFound -> cycleFound
                Nothing         -> []
 
--- | Evalúa y propaga las reglas de inhabilitación en orden topológico para cada taxón.
+-- | Evalúa y propaga las reglas de inhabilitación para cada taxón.
+--
+-- Las reglas se aplican en el /orden topológico/ de sus controladores, de modo que
+-- cuando se evalúa un controlador @c@ todas las reglas que podían inhabilitarlo ya
+-- se han aplicado. Junto con la regla directa (S_obs no vacío y subconjunto de
+-- S_inh), esto implementa la clausura transitiva de la especificación:
+--
+-- > Inh(T,d) <=> existe (c,S_inh,D), d en D :
+-- >              (S_obs(T,c) /= {} && S_obs(T,c) <= S_inh) || Inh(T,c)
 propagateDependencies
   :: SpecsDef
   -> [ResolvedTaxon]
@@ -125,20 +133,23 @@ propagateDependencies specs taxa =
          -- Si hay un ciclo crítico, se emite el error y se retorna sin propagar
          (taxa, [engineErrorToDiagnostic err])
 
-       Right _sortedChars ->
-         -- Grafo acíclico válido: propagar reglas sobre cada taxón
-         let results = map (propagateTaxonRules rules) taxa
+       Right sortedChars ->
+         -- Grafo acíclico válido: propagar reglas ordenadas topológicamente
+         let position = Map.fromList (zip sortedChars [0 :: Int ..])
+             ordered  = sortOn (\(DependentRule c _ _) -> Map.findWithDefault 0 c position) rules
+             results  = map (propagateTaxonRules ordered) taxa
              updatedTaxa = map fst results
              allDiags = concatMap snd results
          in (updatedTaxa, allDiags)
 
--- | Aplica todas las reglas de dependencias a un taxón individual.
+-- | Aplica las reglas de dependencias (ya en orden topológico) a un taxón individual.
 propagateTaxonRules
   :: [DependentRule]
   -> ResolvedTaxon
   -> (ResolvedTaxon, [LintDiagnostic])
 propagateTaxonRules rules taxon =
-  foldl evaluateRule (taxon, []) rules
+  let (finalTaxon, revDiags) = foldl evaluateRule (taxon, []) rules
+  in (finalTaxon, reverse revDiags)
   where
     taxonName = rtName taxon
 
@@ -146,9 +157,16 @@ propagateTaxonRules rules taxon =
       let currentAttrs = rtAttributes currTaxon
           obsStates = getObservedStates ctrlId currentAttrs
           triggered = isDependencyTriggered obsStates disStates
+                   || isInhibited ctrlId currentAttrs
       in if triggered
            then applyInactivation ctrlId deps currTaxon accDiags
            else (currTaxon, accDiags)
+
+    -- Un controlador está inhabilitado si una regla previa lo forzó a Inapplicable
+    isInhibited cid attrs =
+      case Map.lookup cid attrs of
+        Just (AttributedState _ (OriginInapplicableDependency _)) -> True
+        _                                                         -> False
 
     -- Extrae los estados biológicos activos del carácter controlador
     getObservedStates cid attrs =

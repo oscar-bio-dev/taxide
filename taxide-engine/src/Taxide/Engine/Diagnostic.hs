@@ -89,6 +89,8 @@ data EngineError
   -- ^ Ciclo dirigido detectado en el grafo de *DEPENDENT CHARACTERS
   | ContradictoryDependentStateError !Text !Int !Int
   -- ^ Estado explícito dependiente contradice la inhabilitación del controlador (taxon, ctrl, dep)
+  | DuplicateCharacterError !Text !Int !Int
+  -- ^ Carácter codificado más de una vez en el mismo ítem (taxon, carácter, nº de apariciones)
   deriving (Eq, Show, Generic, NFData)
 
 -- | Transforma un error formal de inferencia en un diagnóstico estructurado.
@@ -126,6 +128,15 @@ engineErrorToDiagnostic err = case err of
       , diagMessage  = "Violación biológica: en el taxón '" <> taxonName <> "', el carácter dependiente " <> T.pack (show depId)
                     <> " tiene un estado activo explícito a pesar de que su controlador " <> T.pack (show ctrlId)
                     <> " se encuentra en estado inhabilitante. El estado ha sido forzado a Inapplicable ('-')."
+      }
+
+  DuplicateCharacterError taxonName cid count ->
+    LintDiagnostic
+      { diagCode     = "TAX-DATA-003"
+      , diagSeverity = SeverityError
+      , diagLocation = taxonCharLoc taxonName cid
+      , diagMessage  = "El carácter " <> T.pack (show cid) <> " está codificado " <> T.pack (show count)
+                    <> " veces en el taxón '" <> taxonName <> "'; solo se conserva el último valor y los anteriores se descartan."
       }
 
 -- | TAX-CLAD-001: Carácter invariante sin variación informativa.

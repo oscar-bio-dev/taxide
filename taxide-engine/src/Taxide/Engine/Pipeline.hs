@@ -17,14 +17,17 @@ module Taxide.Engine.Pipeline
   , validateInvariants
   ) where
 
-import Control.DeepSeq (NFData)
+import Control.DeepSeq (NFData, force)
+import Control.Exception (evaluate)
+import Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import GHC.Clock (getMonotonicTime)
 import GHC.Generics (Generic)
 
 import Taxide.Core.Invariants
-  ( validateExclusivePolymorphism
+  ( collectActiveStates
+  , validateExclusivePolymorphism
   , validateStateBounds
   )
 import Taxide.Core.Item (ItemDef)
@@ -41,7 +44,7 @@ import Taxide.Engine.Diagnostic
   )
 import Taxide.Engine.Implicits (injectImplicits)
 import Taxide.Engine.Linter (lintResolvedMatrix)
-import Taxide.Engine.Matrix (ColumnarMatrix, buildColumnarMatrix)
+import Taxide.Engine.Matrix (ColumnarMatrix, buildColumnarMatrix, maxBitsetStates)
 import Taxide.Engine.Variants (AttributedState (..), ResolvedTaxon (..), resolveVariants)
 
 -- | Resultado integral de la ejecución del pipeline semántico.
@@ -57,10 +60,17 @@ data PipelineResult = PipelineResult
   } deriving (Eq, Show, Generic, NFData)
 
 -- | Ejecuta el pipeline completo midiendo el tiempo de resolución en milisegundos.
+--
+-- Los argumentos de entrada se fuerzan /antes/ de arrancar el cronómetro (para no
+-- atribuir al motor el coste de materializar el AST) y el resultado se fuerza a
+-- forma normal /antes/ de pararlo; sin esto Haskell devolvería un valor diferido y
+-- la medición sería ~0 ms independientemente del tamaño de la matriz.
 runPipeline :: SpecsDef -> [ItemDef] -> IO PipelineResult
 runPipeline specs items = do
+  specs' <- evaluate (force specs)
+  items' <- evaluate (force items)
   t0 <- getMonotonicTime
-  let (taxa, matrix, diags) = runPipelinePure specs items
+  (taxa, matrix, diags) <- evaluate (force (runPipelinePure specs' items'))
   t1 <- getMonotonicTime
   let elapsedMs = (t1 - t0) * 1000.0
   pure PipelineResult
@@ -174,7 +184,20 @@ validateInvariants specs taxa = concatMap checkTaxon taxa
                        ]
                   else []
 
-          in exclusiveDiag ++ boundsDiag
+              capacityDiag =
+                [ LintDiagnostic
+                    { diagCode     = "TAX-BND-002"
+                    , diagSeverity = SeverityError
+                    , diagLocation = loc
+                    , diagMessage  = "El estado " <> T.pack (show s) <> " del carácter " <> T.pack (show cid)
+                                  <> " no es representable: la capacidad del bitset es 1.."
+                                  <> T.pack (show maxBitsetStates) <> "; el estado se descartaría en la matriz."
+                    }
+                | s <- toList (collectActiveStates expr)
+                , s < 1 || fromIntegral s > maxBitsetStates
+                ]
+
+          in exclusiveDiag ++ boundsDiag ++ capacityDiag
 
         AttrReal _ _ _    -> []
         AttrInteger _ _   -> []

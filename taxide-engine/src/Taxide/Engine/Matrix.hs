@@ -11,7 +11,8 @@ License     : Apache-2.0
 -}
 
 module Taxide.Engine.Matrix
-  ( PseudoTag
+  ( maxBitsetStates
+  , PseudoTag
   , tagValid
   , tagUnknown
   , tagInapplicable
@@ -90,7 +91,7 @@ data ColumnarMatrix = ColumnarMatrix
   , cmCharTypes    :: !(Map Int CharacterType)
   -- ^ Mapa de tipos de carácter declarados
   , cmDiscreteCols :: !(Map Int (VU.Vector Word64))
-  -- ^ Columnas UM/OM empacadas en bitmasks Word64 (estados 1..62)
+  -- ^ Columnas UM/OM empacadas en bitmasks Word64 (estados 1..64)
   , cmDiscreteTags :: !(Map Int (VU.Vector PseudoTag))
   -- ^ Etiquetas de pseudo-valores por celda en caracteres discretos
   , cmNumericCols  :: !(Map Int NumericColumn)
@@ -185,8 +186,14 @@ buildDiscreteCol cid taxa =
               (0, tagUnknown)
 
     addStateBit w s
-      | s >= 1 && s <= 62 = w .|. bit (fromIntegral (s - 1))
-      | otherwise         = w
+      | s >= 1 && fromIntegral s <= maxBitsetStates = w .|. bit (fromIntegral (s - 1))
+      | otherwise                                   = w
+
+-- | Capacidad máxima de estados por carácter discreto en la máscara @Word64@
+-- (estado @s@ ocupa el bit @s-1@; los pseudo-valores viven en el vector de etiquetas).
+-- Coincide con el límite del estándar DELTA (1..64).
+maxBitsetStates :: Int
+maxBitsetStates = 64
 
 -- | Empaca una columna cuantitativa en la estructura NumericColumn SoA.
 buildNumericCol :: Int -> [ResolvedTaxon] -> NumericColumn

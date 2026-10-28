@@ -19,6 +19,7 @@ module Taxide.Engine.Linter
   , lintIndistinguishableTaxa
   ) where
 
+import Data.List (sort, tails)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -199,43 +200,30 @@ lintIndistinguishableTaxa mat =
                      , isQualitative (Map.lookup cid typeMap)
                      ]
       numericCids  = Map.keys (cmNumericCols mat)
+      -- Firma de fila: etiqueta + valor por columna (las celdas no válidas se
+      -- almacenan con valor neutro, por lo que la igualdad de firma equivale a
+      -- la comparación celda a celda). Agrupar en un Map evita el coste O(N²).
+      groups = Map.fromListWith (flip (++))
+                 [ (rowSignature i discreteCids numericCids, [i]) | i <- [0 .. nTaxa - 1] ]
+      pairs = sort
+                [ (i, j)
+                | grp <- Map.elems groups
+                , (i : js) <- tails grp
+                , j <- js
+                ]
   in if (null discreteCids && null numericCids) || nTaxa < 2
        then []
-       else
-         [ indistinguishableTaxaDiag (names V.! i) (names V.! j)
-         | i <- [0 .. nTaxa - 1]
-         , j <- [i + 1 .. nTaxa - 1]
-         , areTaxaIdentical i j discreteCids numericCids
-         ]
+       else [ indistinguishableTaxaDiag (names V.! i) (names V.! j) | (i, j) <- pairs ]
   where
-    areTaxaIdentical i j discreteCids numericCids =
-      all (discreteEqual i j) discreteCids && all (numericEqual i j) numericCids
-
-    discreteEqual i j cid =
-      let col = cmDiscreteCols mat Map.! cid
-          tags = cmDiscreteTags mat Map.! cid
-          tagI = tags VU.! i
-          tagJ = tags VU.! j
-      in if tagI /= tagJ
-           then False
-           else if tagI == tagValid
-                  then (col VU.! i) == (col VU.! j)
-                  else True
-
-    numericEqual i j cid =
-      let ncol = cmNumericCols mat Map.! cid
-          tags = ncPseudoTags ncol
-          tagI = tags VU.! i
-          tagJ = tags VU.! j
-      in if tagI /= tagJ
-           then False
-           else if tagI == tagValid
-                  then ncAbsMin ncol VU.! i == ncAbsMin ncol VU.! j
-                    && ncNormalLow ncol VU.! i == ncNormalLow ncol VU.! j
-                    && ncCenter ncol VU.! i == ncCenter ncol VU.! j
-                    && ncNormalHigh ncol VU.! i == ncNormalHigh ncol VU.! j
-                    && ncAbsMax ncol VU.! i == ncAbsMax ncol VU.! j
-                  else True
+    rowSignature i discreteCids numericCids =
+      ( [ (cmDiscreteTags mat Map.! cid VU.! i, cmDiscreteCols mat Map.! cid VU.! i)
+        | cid <- discreteCids ]
+      , [ ( ncPseudoTags ncol VU.! i
+          , ( ncAbsMin ncol VU.! i, ncNormalLow ncol VU.! i, ncCenter ncol VU.! i
+            , ncNormalHigh ncol VU.! i, ncAbsMax ncol VU.! i ) )
+        | cid <- numericCids
+        , let ncol = cmNumericCols mat Map.! cid ]
+      )
 
 -- | Determina si un carácter es cualitativo (UM, OM, EUM, EOM o default UM).
 isQualitative :: Maybe CharacterType -> Bool

@@ -11,6 +11,7 @@ License     : Apache-2.0
 module Main (main) where
 
 import Data.Bits (popCount)
+import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -23,7 +24,7 @@ import Test.Tasty.Hedgehog
 import Test.Tasty.HUnit hiding (assert)
 
 import Taxide.Core.Invariants (collectActiveStates)
-import Taxide.Core.Item (ItemDef (..), mkPrimaryItem, mkVariantItem)
+import Taxide.Core.Item (ItemDef (..), ItemType (..), mkPrimaryItem, mkVariantItem)
 import Taxide.Core.Specs (DependentRule (..), ImplicitRule (..), SpecsDef (..), emptySpecs)
 import Taxide.Core.Types
   ( CharacterType (..)
@@ -48,6 +49,7 @@ import Taxide.Engine.Discretize
   , DiscretizedCharacter (..)
   , calculateClassCount
   , discretizeQuantitative
+  , discretizeTaxaValues
   )
 import Taxide.Engine.Implicits (injectImplicits)
 import Taxide.Engine.Matrix
@@ -57,7 +59,7 @@ import Taxide.Engine.Matrix
   , tagInapplicable
   )
 import Taxide.Engine.Pipeline (runPipelinePure)
-import Taxide.Engine.Variants (AttributedState (..), ResolvedTaxon (..), resolveVariants)
+import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..), resolveVariants)
 
 main :: IO ()
 main = defaultMain tests
@@ -71,6 +73,7 @@ tests = testGroup "Taxide.Engine Test Suite"
       , testDAGCycleDetection
       , testQuantitativeDiscretization
       , testCladisticAndOntologicalLinter
+      , testRegressionFixes
       ]
   , testGroup "Property-Based Tests (Hedgehog): Invariantes Matemáticas y SoA"
       [ testProperty "Invariante DAG: Celda dependiente siempre Inapplicable si controlador dispara" propDagInactivation
@@ -162,11 +165,17 @@ testDallwitzPaineDependencies = testGroup "Ejemplos Oficiales de Dallwitz & Pain
             , (10, mkState 3)  -- Contradice 9,2!
             , (20, mkState 1)  -- Puntuado activo
             ]
-          (_, _, diags) = runPipelinePure specs [taxonD]
+          (taxaD, _, diags) = runPipelinePure specs [taxonD]
           depErrors = filter (\d -> diagCode d == "TAX-DEP-002") diags
 
-      -- 10 contradice a 9
-      assertBool "Debe detectarse contradicción TAX-DEP-002" (not (null depErrors))
+      -- 9 -> 10 y, por clausura transitiva, 10 -> 20: dos contradicciones
+      length depErrors @?= 2
+      case taxaD of
+        (t : _) ->
+          case Map.lookup 20 (rtAttributes t) of
+            Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) _) -> pure ()
+            other -> assertFailure ("Se esperaba que 20 se propagara a Inapplicable, pero se obtuvo: " ++ show other)
+        [] -> assertFailure "taxa no debe estar vacío"
   ]
 
 --------------------------------------------------------------------------------
@@ -482,6 +491,63 @@ propMatrixDimensions = property $ do
   cmNumTaxa mat === nTaxa
   cmNumChars mat === 4
   length (cmTaxonNames mat) === nTaxa
+
+--------------------------------------------------------------------------------
+-- 7. Regresiones de defectos corregidos
+--------------------------------------------------------------------------------
+
+testRegressionFixes :: TestTree
+testRegressionFixes = testGroup "Regresiones de defectos corregidos"
+  [ testCase "Cadena transitiva: controlador forzado a '-' inhabilita al dependiente omitido sin error" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 25
+            , specDependencies  =
+                [ DependentRule 9 (Set.singleton 2) [10]
+                , DependentRule 10 (Set.fromList [2, 3]) [20]
+                ]
+            }
+          taxon = mkPrimaryItem "Taxon_T" [(9, mkState 2)]
+          (taxa, _, diags) = runPipelinePure specs [taxon]
+      length (filter (\d -> diagCode d == "TAX-DEP-002") diags) @?= 0
+      case taxa of
+        (t : _) -> do
+          let isInap cid = case Map.lookup cid (rtAttributes t) of
+                Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) _) -> True
+                _ -> False
+          isInap 10 @?= True
+          isInap 20 @?= True
+        [] -> assertFailure "taxa no debe estar vacío"
+
+  , testCase "IN: los caracteres enteros se discretizan igual que los reales" $ do
+      let mkIn :: Int -> Int32 -> ResolvedTaxon
+          mkIn i v = ResolvedTaxon
+            { rtIndex = i, rtType = PrimaryItem, rtName = "T" <> showT i, rtAuthority = Nothing
+            , rtAttributes = Map.fromList [(1, AttributedState (AttrInteger Nothing (mkSingleStat v)) OriginExplicit)]
+            , rtComments = []
+            }
+          taxa = zipWith mkIn [1 ..] [10, 20, 30, 40]
+          dc = discretizeTaxaValues 1 (FixedClasses 4) UseCenterVal taxa
+      dcNumClasses dc @?= 4
+      Map.lookup 1 (dcAssignments dc) @?= Just 1
+      Map.lookup 4 (dcAssignments dc) @?= Just 4
+
+  , testCase "TAX-BND-002: un estado fuera de 1..64 se reporta en lugar de descartarse" $ do
+      let specs = emptySpecs { specNumCharacters = 1, specCharTypes = Map.fromList [(1, UM)] }
+          (_, _, diags) = runPipelinePure specs [mkPrimaryItem "Taxon_X" [(1, mkState 65)]]
+      length (filter (\d -> diagCode d == "TAX-BND-002") diags) @?= 1
+
+  , testCase "Capacidad de 64 estados: el estado 64 ocupa el bit 63 de la máscara" $ do
+      let specs = emptySpecs { specNumCharacters = 1, specCharTypes = Map.fromList [(1, UM)] }
+          (_, mat, diags) = runPipelinePure specs [mkPrimaryItem "Taxon_Y" [(1, mkState 64)]]
+      length (filter (\d -> diagCode d == "TAX-BND-002") diags) @?= 0
+      popCount (snd (lookupDiscreteCell mat 0 1)) @?= 1
+
+  , testCase "TAX-DATA-003: un carácter repetido en un ítem se reporta" $ do
+      let specs = emptySpecs { specNumCharacters = 1, specCharTypes = Map.fromList [(1, UM)] }
+          item = mkPrimaryItem "Taxon_Z" [(1, mkState 1), (1, mkState 2)]
+          (_, _, diags) = runPipelinePure specs [item]
+      length (filter (\d -> diagCode d == "TAX-DATA-003") diags) @?= 1
+  ]
 
 --------------------------------------------------------------------------------
 -- Helpers
