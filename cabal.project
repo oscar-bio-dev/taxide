@@ -3,6 +3,8 @@ packages:
     taxide-delta/
     taxide-engine/
     taxide-export/
+    taxide-tui/
+    taxide-app/
 
 tests: True
 benchmarks: True

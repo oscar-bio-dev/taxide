@@ -7,6 +7,30 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [0.5.0] - 2026-10-28 (Release v1.0.0 — Fase 5 Final)
+
+### 🚀 Añadido
+
+#### `taxide-tui` (Interfaz de Terminal Reactiva en 24 bits TrueColor, Soporte de Ratón y Linter en Vivo)
+- **`Taxide.Theme.*` y `Taxide.TUI.Theme`:** arquitectura modular de temas cromáticos de 24 bits (`Vty.rgbColor`) con cuatro paletas intercambiables en vivo (`Taxide.Theme.Gruvbox`, `Taxide.Theme.Nord`, `Taxide.Theme.Dracula`, `Taxide.Theme.Catppuccin`). Arranca por defecto con *Gruvbox Dark* y permite alternar en caliente mediante `:theme gruvbox`, `:theme nord`, `:theme dracula` y `:theme catppuccin` o desde el botón de barra de herramientas.
+- **`Taxide.TUI.State`:** máquina de estados modal estricta `AppState` ($\Sigma = (\mathcal{D}, \mathcal{M}, \Delta_{\text{overlay}}, \kappa, \mu, \nu)$) con virtualización 2D del viewport $\mathcal{V}(r_0, c_0, H_{\text{rows}}, W_{\text{cols}})$ en tiempo $O(H_{\text{rows}} \cdot W_{\text{cols}})$, adaptación responsiva al 100% de la pantalla al maximizar la terminal, soporte de eventos de ratón (`ResourceName`) y cuatro vistas integradas (`FocusGrid`, `FocusLinter`, `FocusTree`, `FocusKey`).
+- **`Taxide.TUI.Update`:** endomorfismo puro de transición de eventos `stepTUIEvent :: AppState -> Vty.Event -> AppState` y manejador de ratón `stepTUIMouse`, edición en vivo de celdas con `Taxide.Delta.Parser.Items.pAttribute`, asignación instantánea de estados en 1 clic (`ClickSetState`), propagación reactiva instantánea del DAG de `*DEPENDENT CHARACTERS`, refresco en vivo del Linter (`TAX-DEP-002`, `TAX-MATH-001`) y comandos interactivos `:add`, `:add+`, `:w`, `:q`, `:wq`, `:q!`, `:tree [parsimony|upgma|nj]`, `:key [es|en]`, `:theme [gruvbox|nord|dracula|catppuccin]` y `:export [nexus|tnt|dwca|json|md|html|hdf5] <archivo>`.
+- **`Taxide.TUI.Draw` y `Taxide.TUI.Runner`:** renderizador declarativo en `brick` con encabezados fijados, barra de acciones rápidas clicable, inspector semántico inferior con píldoras de estado clicables, ventana modal de edición, ventana de ayuda rápida (`?`) y arnés de simulación *headless* sin requerir TTY físico.
+- **Suite `taxide-tui-test` (7 pruebas headless):** verificación automatizada de límites del viewport 2D, cascada reactiva de inaplicabilidad (`1,2:2`), disparo en vivo de `TAX-DEP-002`, reconstrucción de árboles y claves con `:tree`/`:key`, búsqueda incremental `/`, adición de especies `:add`, redimensionado responsivo (190×50) con clics de ratón y cambio dinámico de temas `:theme`.
+
+#### `taxide-app` (Ejecutable Maestro Unificado `taxide`)
+- **CLI unificado `taxide` (`-O2 -threaded -rtsopts -with-rtsopts=-N`):** integra en un único binario todos los subcomandos oficiales del ecosistema (`taxide tui`, `taxide fmt`, `taxide lint`, `taxide compile`, `taxide describe`, `taxide tree`, `taxide key`).
+
+### ⚡ Rendimiento
+- **`Taxide.Engine.Tree`:** deduplicación de vecindades topológicas en `sprNeighbors` y `tbrNeighbors` mediante `Set.toList . Set.fromList`, evitando re-evaluar topologías idénticas durante la búsqueda heurística en paralelo.
+
+### 📚 Documentación
+- `doc/taxide.tex` y `doc/taxide.pdf` actualizados a `v1.0.0` con la Sección 8 (`\label{sec:tui}`: Arquitectura Reactiva de Interfaz de Terminal y Edición Incremental) y Tabla 1 con todos los componentes de las Fases 1 a 5 en estado **Implementado**.
+- Nueva Guía de Usuario oficial en LaTeX (`doc/user-guide.tex` y `doc/user-guide.pdf`) documentando la anatomía visual de la TUI, controles de ratón, atajos de teclado, sintaxis DELTA y catálogo completo de comandos `:Ex`.
+- `README.md`, `doc/RUNBOOK.md` y `CITATION.cff` actualizados a `0.5.0` / Release `v1.0.0`.
+
+---
+
 ## [0.4.0] - 2026-10-28
 
 ### 🚀 Añadido

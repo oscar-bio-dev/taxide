@@ -151,8 +151,8 @@ cabal test all --test-show-details=streaming
 runhaskell doc/pdfltex.hs doc/taxide.tex
 ```
 
-> 📖 **¿Buscas operaciones avanzadas, flujos CI/CD o resolución de incidencias?**
-> Consulta el **[Manual de Operaciones y Runbook Técnico (`doc/RUNBOOK.md`)](doc/RUNBOOK.md)** para una guía exhaustiva de administración, transpilación Darwin Core Archive (DwC-A), motores cladísticos y recetas paso a paso.
+> 📖 **¿Buscas operaciones avanzadas, atajos de la TUI, flujos CI/CD o resolución de incidencias?**
+> Consulta la **[Guía de Usuario de la TUI (PDF)](doc/user-guide.pdf)** ([`doc/user-guide.tex`](doc/user-guide.tex)) y el **[Manual de Operaciones y Runbook Técnico (`doc/RUNBOOK.md`)](doc/RUNBOOK.md)** para una guía exhaustiva de administración, controles de ratón/teclado, temas cromáticos (`:theme gruvbox|nord|dracula|catppuccin`), transpilación Darwin Core Archive (DwC-A) y motores cladísticos.
 
 ---
 
@@ -215,9 +215,9 @@ gantt
     Sankoff/Wagner (Dynamic Programming)     :done, f4_2, after f4_1, 1M
     Distancia de Gower & Claves (Entropía)   :done, f4_3, after f4_2, 1M
     section Fase 5: TUI Interactiva (Brick)
-    Viewport Virtualizado & 2D Cursor        :f5_1, after f4_3, 1M
-    Linter Reactivo & Visor Filogenético     :f5_2, after f5_1, 1M
-    TAXIDE v1.0.0 Release                    :milestone, f5_3, after f5_2, 0d
+    Viewport Virtualizado & 2D Cursor        :done, f5_1, after f4_3, 1M
+    Linter Reactivo & Visor Filogenético     :done, f5_2, after f5_1, 1M
+    TAXIDE v1.0.0 Release                    :done, milestone, f5_3, after f5_2, 0d
 ```
 
 ### Detalle de Fases de Ingeniería
@@ -279,17 +279,17 @@ gantt
   - Verificación de propiedades métricas de Gower ($D_{ii}=0, D_{ij}=D_{ji}, D_{ij}\in[0,1]$) y reconstrucción exacta con UPGMA/NJ, además de completitud del 100% de taxones en claves generadas (con `Hedgehog`).
 * **🎯 Hito Entregable (Milestone 4):** Ejecutables `taxide-tree` y `taxide-key` que generan cladogramas, fenogramas y claves de identificación en milisegundos (entregados).
 
-#### 🟣 Fase 5: Terminal User Interface (TUI) y Linter en Vivo
+#### 🟢 Fase 5: Terminal User Interface (TUI) y Linter en Vivo [COMPLETADA]
 * **Paquetes:** [`taxide-tui`](taxide-tui), [`taxide-app`](taxide-app)
 * **Objetivos Técnicos:**
   - Arquitectura reactiva Model-View-Update (MVU) en `brick` y `vty` sobre terminales con paleta Gruvbox Dark y soporte TrueColor de 24 bits.
-  - Navegación modal estilo VIM (Normal, Insert, Visual, Command) con cursor 2D y virtualización de viewport para garantizar $60\text{ FPS}$ constantes en datasets masivos.
-  - Propagación de modificaciones en tiempo $O(\text{deg}^+(C))$ mediante *overlay delta maps*, actualizando el estado de celdas dependientes sin congelar la interfaz.
-  - Vistas integradas: Hoja de cálculo matricial, editor modal de atributos con autocompletado, panel de alertas del linter taxonómico en vivo y visor de árboles en caracteres ASCII/Unicode.
+  - Navegación modal estilo VIM (Normal, Edit, Command, Search) con cursor 2D y virtualización de viewport para garantizar $60\text{ FPS}$ constantes en datasets masivos.
+  - Propagación de modificaciones en tiempo $O(|\mathcal{C}| + |E|)$ mediante *overlay delta maps*, actualizando el estado de celdas dependientes sin congelar la interfaz.
+  - Vistas integradas: Hoja de cálculo matricial, editor modal de atributos, panel de alertas del linter taxonómico en vivo y visores de árboles filogenéticos y claves dicotómicas.
 * **Estrategia de Pruebas:**
-  - Pruebas *headless* de Brick inyectando secuencias de eventos de teclado sintéticos.
-  - Perfilado de memoria y CPU con `+RTS -s -p` para certificar la erradicación de fugas de memoria durante sesiones de edición prolongadas.
-* **🎯 Hito Entregable (Milestone 5 - v1.0.0):** Suite completa TAXIDE distribuible como un único ejecutable binario estático optimizado con GHC `-O2 -threaded`.
+  - Pruebas *headless* en `taxide-tui-test` inyectando secuencias de eventos de teclado sintéticos (`stepTUIEvents`).
+  - Verificación de propagación reactiva de `*DEPENDENT CHARACTERS`, disparo inmediato de `TAX-DEP-002` y comandos `:tree` / `:key`.
+* **🎯 Hito Entregable (Milestone 5 - v0.5.0 / Release v1.0.0):** Suite completa TAXIDE distribuible con el ejecutable maestro unificado `taxide` optimizado con GHC `-O2 -threaded` (entregado).
 
 ---
 

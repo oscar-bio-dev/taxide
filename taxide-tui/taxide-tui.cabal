@@ -1,0 +1,83 @@
+cabal-version:      3.0
+name:               taxide-tui
+version:            1.0.0.0
+synopsis:           Interfaz de terminal reactiva (TUI) en 24-bit TrueColor con Gruvbox Dark y Linter en vivo
+description:        Implementa la arquitectura Model-View-Update (MVU) sobre Brick y Vty con
+                    virtualización 2D de viewport a 60 FPS, edición modal estilo VIM, propagación
+                    reactiva instantánea del DAG de dependencias y visores integrados de árboles
+                    filogenéticos y claves dicotómicas.
+license:            Apache-2.0
+author:             TAXIDE Core Architecture Team
+maintainer:         core@taxide.org
+category:           Bioinformatics, User Interfaces
+build-type:         Simple
+
+common common-options
+    default-language:   GHC2021
+    default-extensions:
+        StrictData
+        OverloadedStrings
+        DeriveGeneric
+        DeriveAnyClass
+        BangPatterns
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+
+library
+    import:             common-options
+    hs-source-dirs:     src
+    exposed-modules:
+        Taxide.Theme.Types
+        Taxide.Theme.Gruvbox
+        Taxide.Theme.Nord
+        Taxide.Theme.Dracula
+        Taxide.Theme.Catppuccin
+        Taxide.TUI.Theme
+        Taxide.TUI.State
+        Taxide.TUI.Update
+        Taxide.TUI.Draw
+        Taxide.TUI.Runner
+    build-depends:
+        base              >= 4.18 && < 5,
+        brick             >= 2.0,
+        bytestring        >= 0.11,
+        containers        >= 0.6,
+        deepseq           >= 1.4,
+        directory         >= 1.3,
+        filepath          >= 1.4,
+        megaparsec        >= 9.5,
+        microlens         >= 0.4,
+        text              >= 2.0,
+        vector            >= 0.13,
+        vty               >= 6.0,
+        vty-crossplatform >= 0.4,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        taxide-export
+
+test-suite taxide-tui-test
+    import:             common-options
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Main.hs
+    build-depends:
+        base              >= 4.18 && < 5,
+        containers        >= 0.6,
+        tasty             >= 1.4,
+        tasty-hunit       >= 0.10,
+        text              >= 2.0,
+        vector            >= 0.13,
+        vty               >= 6.0,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        taxide-tui
+

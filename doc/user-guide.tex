@@ -1,0 +1,382 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Paquetes Tipográficos y Matemáticos Fundamentales ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{longtable}
+
+% --- Configuración de Enlaces e Hipertexto ---
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=teal,
+    citecolor=cyan,
+    filecolor=magenta,
+    urlcolor=blue,
+    pdftitle={Guía de Usuario de TAXIDE TUI y Referencia de Comandos},
+    pdfauthor={TAXIDE Core Architecture \& Scientific Computing Team},
+    pdfsubject={Manual de Usuario de la Interfaz de Terminal Reactiva (TUI) y CLI de TAXIDE},
+    pdfkeywords={TAXIDE, TUI, Brick, Vty, DELTA, Cladística, Gruvbox, Atajos, Ratón, Comandos}
+}
+
+% --- Versión del documento ---
+\newcommand{\taxideversion}{1.0.0}
+\newcommand{\taxidedate}{28 de octubre de 2026}
+
+% --- Paleta Gruvbox para ejemplos y código ---
+\definecolor{gruvboxgreen}{RGB}{121, 116, 14}
+\definecolor{gruvboxblue}{RGB}{7, 102, 120}
+\definecolor{gruvboxorange}{RGB}{175, 58, 3}
+\definecolor{gruvboxred}{RGB}{157, 0, 6}
+\definecolor{gruvboxgray}{RGB}{102, 92, 84}
+
+\lstset{
+    basicstyle=\small\ttfamily,
+    keywordstyle=\color{gruvboxorange}\bfseries,
+    commentstyle=\color{gruvboxblue}\itshape,
+    stringstyle=\color{gruvboxgreen},
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{white},
+    tabsize=2,
+    showstringspaces=false,
+    literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+             {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+             {ñ}{{\~n}}1 {Ñ}{{\~N}}1 {ü}{{\"u}}1
+}
+
+% --- Macros de interfaz ---
+\newcommand{\keystroke}[1]{\texttt{[#1]}}
+\newcommand{\mousebtn}[1]{\textbf{\texttt{#1}}}
+\newcommand{\excmd}[1]{\texttt{:#1}}
+
+% --- Metadatos del Documento ---
+\title{\textbf{\Huge TAXIDE v\taxideversion{} --- Guía de Usuario}\\
+\Large Manual Completo de la Interfaz de Terminal Reactiva (TUI),\\
+Interacción con Ratón, Atajos de Teclado y Comandos Operativos}
+\author{\textbf{TAXIDE Core Architecture \& Scientific Computing Team}}
+\date{Versión \taxideversion{} --- \taxidedate}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento constituye el manual de usuario oficial de la interfaz de terminal reactiva (\textbf{TUI}) y del ejecutable maestro unificado \texttt{taxide} (versión \taxideversion). Describe en detalle la arquitectura visual responsiva a pantalla completa, los controles interactivos mediante ratón (selección directa de celdas, píldoras de asignación de estado en un solo click, barra de acciones rápidas y salto desde diagnósticos), el sistema de navegación híbrido (estilo VIM y cursores convencionales), la sintaxis de codificación morfológica DELTA en vivo, el catálogo completo de comandos \texttt{:Ex} y los flujos de trabajo habituales en sistemática filogenética y taxonomía integrativa.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =========================================================================
+\section{Inicio Rápido y Ejecución de la TUI}
+\label{sec:inicio}
+% =========================================================================
+
+\subsection{Requisitos de Terminal}
+La interfaz interactiva \texttt{taxide-tui} está construida sobre la arquitectura funcional \textit{Model-View-Update} (\texttt{brick} y \texttt{vty}) con soporte nativo para:
+\begin{itemize}
+    \item \textbf{Color de 24 bits (TrueColor):} Emplea la paleta ergonómica \textit{Gruvbox Dark} para codificar semánticamente el estado biológico de cada celda.
+    \item \textbf{Redimensionado Dinámico Responsivo (100\,\% de Pantalla):} Al maximizar o redimensionar la ventana del emulador de terminal, TAXIDE recalcula automáticamente el número de filas y columnas visibles del \textit{viewport} 2D y expande proporcionalmente el ancho de la columna taxonómica y de las columnas de caracteres para aprovechar la totalidad del espacio horizontal y vertical.
+    \item \textbf{Soporte Completo de Ratón (\textit{Mouse Mode}):} Habilita clicks izquierdos, clicks derechos y desplazamiento con rueda de ratón sobre pestañas, botones de acción rápida, celdas de la matriz, píldoras de estados en el inspector y diagnósticos del linter.
+\end{itemize}
+
+\subsection{Comandos de Arranque}
+Para iniciar la interfaz interactiva sobre cualquier directorio que contenga los archivos cardinales del estándar CSIRO DELTA (\texttt{SPECS}, \texttt{CHARS} e \texttt{ITEMS}), ejecute desde la raíz del proyecto:
+
+\begin{lstlisting}[language=bash]
+# Iniciar la TUI sobre el dataset de referencia (test/fixtures/minimal)
+cabal run taxide -- tui -d test/fixtures/minimal
+
+# Atajo equivalente: si se invoca sin subcomando, 'taxide' abre la TUI
+cabal run taxide -- -d test/fixtures/minimal
+
+# Si el binario ya fue compilado o instalado en el PATH:
+taxide tui -d ruta/al/dataset
+\end{lstlisting}
+
+% =========================================================================
+\section{Anatomía Visual de la Interfaz (TUI)}
+\label{sec:anatomia}
+% =========================================================================
+
+La pantalla de \texttt{taxide-tui} se divide verticalmente en cinco regiones diseñadas para maximizar la densidad de información biológica sin sacrificar legibilidad:
+
+\begin{enumerate}
+    \item \textbf{Barra Superior de Pestañas y Estado Global (Fila 1):}
+    Muestra la identidad del sistema (\texttt{TAXIDE v1.0.0}), las cuatro vistas principales clicables con el ratón o accesibles con las teclas \keystroke{1}--\keystroke{4} o \keystroke{Tab}:
+    \begin{itemize}
+        \item \keystroke{1:Cuadrícula}: Matriz morfológica bidimensional ($\text{Taxones} \times \text{Caracteres}$).
+        \item \keystroke{2:Linter (n)}: Panel de auditoría ontológica y cladística en tiempo real, indicando entre paréntesis el número total de diagnósticos activos.
+        \item \keystroke{3:Árbol}: Visor de cladogramas de parsimonia (Fitch/Sankoff) y fenogramas de distancia (UPGMA/Neighbor-Joining) con índices $CI$, $RI$, $RC$ y cadena Newick.
+        \item \keystroke{4:Clave}: Visor de claves dicotómicas de identificación generadas por minimización de entropía de Shannon.
+    \end{itemize}
+    En el extremo derecho muestra el estado de sincronización en disco (\texttt{GUARDADO} o \texttt{*MODIFICADO}) y las dimensiones de la matriz ($N\text{ taxones} \times M\text{ caracteres}$).
+
+    \item \textbf{Barra de Acciones Rápidas Clicable (Fila 2):}
+    Una barra de herramientas interactiva pensada para ejecutar con un solo click de ratón (o su atajo equivalente) las operaciones más frecuentes de edición y análisis:
+    \begin{center}
+    \small
+    \texttt{[+ Especie (o)] [+ Variante (O)] [Editar (i)] [- Inaplicable] [U Desconocido] [Guardar (:w)] [Árbol] [Clave] [? Ayuda]}
+    \end{center}
+
+    \item \textbf{Área Principal Responsiva (Centro, expansión vertical y horizontal al 100\,\%):}
+    Renderiza la vista activa (\textsc{Cuadrícula}, \textsc{Linter}, \textsc{Árbol} o \textsc{Clave}). En la vista \textsc{Cuadrícula}, el \textit{viewport} virtualizado proyecta únicamente la submatriz visible en tiempo constante $O(H_{\text{rows}} \cdot W_{\text{cols}})$ y ajusta dinámicamente el ancho de cada columna al maximizar la ventana.
+
+    \item \textbf{Panel Inspector Semántico y Píldoras de Asignación Rápida (Zona Inferior):}
+    Muestra en tiempo real toda la información de la celda bajo el cursor $(r, c)$:
+    \begin{itemize}
+        \item \textbf{Línea 1 (Taxón y Valor Resuelto):} Índice del taxón, nombre científico completo, etiqueta si es variante (\texttt{\#+}), representación cruda DELTA y origen semántico resuelto por el motor (\texttt{Explícito}, \texttt{Heredado de \#+}, \texttt{Valor Implícito}, \texttt{Inaplicable por dependencia de C\#} o \texttt{No codificado}).
+        \item \textbf{Línea 2 (Definición del Carácter y Reglas DAG):} Código $C_j$, tipo algebraico (\texttt{UM}, \texttt{OM}, \texttt{IN}, \texttt{RN}, \texttt{TE}), nombre descriptivo y reglas del grafo acíclico dirigido (DAG) de dependencias donde $C_j$ actúa como controlador o dependiente.
+        \item \textbf{Línea 3 (Píldoras Clicables de Estados):} Botones interactivos para cada estado válido del carácter (e.g., \texttt{[1:present]}, \texttt{[2:absent]}) seguidos de \texttt{[-:Inaplicable]} y \texttt{[U:Desconocido]}. \textbf{Hacer click con el ratón sobre cualquiera de estas píldoras asigna el estado a la celda seleccionada de forma instantánea}, sin necesidad de abrir el editor ni usar el teclado.
+    \end{itemize}
+
+    \item \textbf{Barra Inferior de Estado Modal y Línea de Comandos (Última Fila):}
+    Presenta el insignia del modo actual (\texttt{NORMAL}, \texttt{EDITAR}, \texttt{COMANDO}, \texttt{BUSCAR}), la posición exacta del cursor, mensajes informativos o alertas de error y, cuando se pulsa \keystroke{:} o \keystroke{/}, el prompt interactivo de entrada.
+\end{enumerate}
+
+\subsection{Codificación Cromática Semántica (Paleta Gruvbox Dark 24-bit)}
+Cada celda de la cuadrícula refleja su estado biológico y algebraico mediante colores de alto contraste detallados en la Tabla~\ref{tab:colores}.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Codificación cromática de las celdas en \texttt{taxide-tui} (Gruvbox Dark TrueColor).}
+\label{tab:colores}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+\textbf{Estado de la Celda} & \textbf{Color Visual} & \textbf{Hex RGB} & \textbf{Significado Biológico y Semántico} \\
+\midrule
+Cursor activo & Amarillo inverso & \texttt{\#fabd2f} & Celda actualmente seleccionada $(r, c)$ bajo el foco de edición o inspección. \\
+Estado aplicable válido & Verde brillante & \texttt{\#b8bb26} & Estado discreto codificado (\texttt{1}, \texttt{2}, \texttt{1/2}), medida numérica (\texttt{RN}/\texttt{IN}) o texto (\texttt{TE}) libre de conflictos. \\
+Inaplicable (\texttt{-}) & Gris atenuado & \texttt{\#928374} & Carácter biológicamente inaplicable (declarado explícitamente o propagado automáticamente por el DAG de dependencias). \\
+Desconocido (\texttt{U}) / Vacío & Naranja ámbar & \texttt{\#fe8019} & Dato faltante (\textit{Unknown}) o celda con advertencia no fatal del linter. \\
+Violación del Linter & Rojo intenso & \texttt{\#fb4934} & Inconsistencia biológica o matemática detectada en vivo (e.g., \texttt{TAX-DEP-002} estado activo en carácter inaplicable, o \texttt{TAX-MATH-001} cotas numéricas invertidas). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
+\section{Navegación e Interacción con Ratón (Mouse)}
+\label{sec:raton}
+% =========================================================================
+
+\texttt{taxide-tui} ha sido diseñado para ofrecer una experiencia fluida tanto a usuarios de teclado puro como a quienes prefieren seleccionar y modificar celdas rápidamente con el ratón. La Tabla~\ref{tab:mouse} resume todas las zonas interactivas.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Controles interactivos con el ratón en \texttt{taxide-tui}.}
+\label{tab:mouse}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+\textbf{Elemento de la Interfaz} & \textbf{Acción del Ratón} & \textbf{Comportamiento en la TUI} \\
+\midrule
+Celda inactiva $(r, c)$ & \mousebtn{Click Izquierdo} & Mueve inmediatamente el cursor a la fila $r$ y columna $c$, actualizando el Inspector Semántico. \\
+Celda ya seleccionada $(r, c)$ & \mousebtn{Click Izquierdo} (2.º click) & Abre el \textbf{Modal de Edición} (\texttt{ModeEdit}) para modificar el valor de la celda. \\
+Cualquier celda $(r, c)$ & \mousebtn{Click Derecho} & Selecciona la celda $(r, c)$ y abre directamente el \textbf{Modal de Edición} en un solo paso. \\
+Píldoras de estado en Inspector & \mousebtn{Click Izquierdo} & Asigna instantáneamente el estado pulsado (e.g., \texttt{[1:...]}, \texttt{[2:...]}, \texttt{[-:Inaplicable]}, \texttt{[U:Desconocido]}) a la celda actual, propaga el DAG y recalcula el Linter en vivo. \\
+Píldoras dentro del Modal & \mousebtn{Click Izquierdo} & Rellena y confirma el estado seleccionado, cerrando el modal automáticamente. \\
+Botones \texttt{[Guardar]} / \texttt{[Cancelar]} & \mousebtn{Click Izquierdo} & Confirma o descarta la edición manual en el modal sin requerir \keystroke{Enter} ni \keystroke{Esc}. \\
+Pestañas superiores (\texttt{1}--\texttt{4}) & \mousebtn{Click Izquierdo} & Cambia inmediatamente a la vista \textsc{Cuadrícula}, \textsc{Linter}, \textsc{Árbol} (calculando el árbol si no existe) o \textsc{Clave} (generando la clave si no existe). \\
+Barra de Acciones Rápidas & \mousebtn{Click Izquierdo} & Ejecuta la acción del botón: agregar especie (\texttt{:add}), agregar variante (\texttt{:add+}), editar celda, marcar \texttt{-} o \texttt{U}, guardar (\texttt{:w}), inferir árbol, generar clave o mostrar ayuda (\texttt{?}). \\
+Fila de diagnóstico en \textsc{Linter} & \mousebtn{Click Izquierdo} & Salta automáticamente de regreso a la vista \textsc{Cuadrícula} y posiciona el cursor sobre el taxón y carácter exactos que causaron el error. \\
+Área de la Cuadrícula & \mousebtn{Rueda Arriba / Abajo} & Desplaza el cursor verticalmente entre taxones. \\
+Área de la Cuadrícula & \mousebtn{Shift + Rueda} & Desplaza el cursor horizontalmente entre caracteres. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
+\section{Atajos de Teclado por Modo}
+\label{sec:teclado}
+% =========================================================================
+
+\subsection{Modo Normal (\texttt{NORMAL})}
+El Modo Normal es el modo predeterminado para explorar la matriz, aplicar cambios rápidos de estado y alternar entre paneles. Soporta simultáneamente las teclas clásicas de VIM y las teclas de dirección estándar (Tabla~\ref{tab:atajos-normal}).
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Atajos de teclado disponibles en Modo Normal (\texttt{NORMAL}).}
+\label{tab:atajos-normal}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+\textbf{Tecla / Combinación} & \textbf{Acción} \\
+\midrule
+\keystroke{h} / \keystroke{j} / \keystroke{k} / \keystroke{l} o Flechas $\leftarrow \downarrow \uparrow \rightarrow$ & Desplaza el cursor una celda hacia la izquierda, abajo, arriba o derecha dentro de $[0, N-1] \times [1, M]$. \\
+\keystroke{g} o \keystroke{Home} & Salta al primer taxón de la matriz (fila $0$). \\
+\keystroke{G} o \keystroke{End} & Salta al último taxón de la matriz (fila $N-1$). \\
+\keystroke{0} & Salta al primer carácter (columna $1$). \\
+\keystroke{\$} & Salta al último carácter (columna $M$). \\
+\keystroke{PgUp} / \keystroke{PgDn} & Avanza o retrocede un bloque completo de filas equivalente a la altura del viewport. \\
+\keystroke{i} o \keystroke{Enter} & Abre el \textbf{Modal de Edición} (\texttt{EDITAR}) sobre la celda actual $(r, c)$. \\
+\keystroke{o} & Abre el prompt pre-rellenado \texttt{:add } para agregar una nueva especie primaria. \\
+\keystroke{O} (Mayús + o) & Abre el prompt pre-rellenado \texttt{:add+ } para agregar un ítem variante (\texttt{\#+}) con herencia. \\
+\keystroke{-} & Marca inmediatamente la celda actual como \textbf{Inaplicable} (\texttt{-}) en un solo toque. \\
+\keystroke{u} & Marca inmediatamente la celda actual como \textbf{Desconocido} (\texttt{U}) en un solo toque. \\
+\keystroke{1}, \keystroke{2}, \keystroke{3}, \keystroke{4} & Cambia directamente a la vista \textsc{Cuadrícula} (\texttt{1}), \textsc{Linter} (\texttt{2}), \textsc{Árbol} (\texttt{3}) o \textsc{Clave} (\texttt{4}). \\
+\keystroke{Tab} & Alterna cíclicamente entre las cuatro vistas principales ($\textsc{Cuadrícula} \to \textsc{Linter} \to \textsc{Árbol} \to \textsc{Clave}$). \\
+\keystroke{/} & Inicia el \textbf{Modo Búsqueda Incremental} (\texttt{BUSCAR}) por nombre de taxón o carácter. \\
+\keystroke{:} & Inicia el \textbf{Modo Comando} (\texttt{COMANDO}) para ejecutar directivas \texttt{:Ex}. \\
+\keystroke{?} o \keystroke{F1} & Abre o cierra la ventana modal de \textbf{Ayuda Rápida}. \\
+\keystroke{q} & Sale de la aplicación si no hay cambios pendientes (avisa si existen modificaciones sin guardar). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Modo Edición (\texttt{EDITAR}) y Sintaxis de Celdas DELTA}
+Al presionar \keystroke{i}, \keystroke{Enter}, hacer doble click izquierdo o click derecho sobre una celda, se despliega el modal de edición. En él puede escribir la expresión DELTA y pulsar \keystroke{Enter} (o hacer click en \texttt{[Guardar (Enter)]}) para confirmar, o pulsar \keystroke{Esc} (o click en \texttt{[Cancelar (Esc)]}) para abortar.
+
+La Tabla~\ref{tab:sintaxis-edicion} muestra los formatos admitidos según el tipo de carácter $C_j$:
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Sintaxis de entrada en Modo Edición según el tipo de carácter DELTA.}
+\label{tab:sintaxis-edicion}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+\textbf{Tipo} & \textbf{Descripción} & \textbf{Ejemplos Válidos} & \textbf{Significado Biológico} \\
+\midrule
+\texttt{UM} / \texttt{OM} & Discreto multiestado & \texttt{1}, \texttt{2} & Estado único observado. \\
+\texttt{UM} / \texttt{OM} & Polimorfismo / Incertidumbre & \texttt{1/2}, \texttt{1/2/3} & Incertidumbre o polimorfismo intraespecífico ($1 \lor 2$). \\
+\texttt{UM} / \texttt{OM} & Co-ocurrencia & \texttt{1\&2} & Presencia simultánea de ambos estados en el mismo taxón ($1 \land 2$). \\
+\texttt{IN} / \texttt{RN} & Numérico (Entero / Real) & \texttt{4.5}, \texttt{2.0-5.5} & Valor puntual o intervalo normal $[\text{mín}, \text{máx}]$. \\
+\texttt{IN} / \texttt{RN} & Cuantitativo de 5 puntos & \texttt{(1.2-)2.5-4.0(-5.8)} & Rango extremo inferior $(1.2)$, rango normal $[2.5, 4.0]$ y extremo superior $(5.8)$. \\
+\texttt{TE} & Texto libre & \texttt{<Pantropical>} o \texttt{Pantropical} & Prosa descriptiva libre asociada al carácter. \\
+Todos & Pseudo-valores & \texttt{-} \quad o \quad \texttt{U} & \texttt{-} = Biológicamente inaplicable; \texttt{U} = Desconocido (\textit{Unknown}). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
+\section{Catálogo Completo de Comandos Ex (\texttt{:})}
+\label{sec:comandos}
+% =========================================================================
+
+Al presionar \keystroke{:} desde el Modo Normal, la barra inferior activa el intérprete de comandos Ex. Escriba el comando deseado y presione \keystroke{Enter} (o \keystroke{Esc} para cancelar). La Tabla~\ref{tab:comandos-ex} documenta todos los comandos soportados.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Referencia completa de comandos \texttt{:Ex} en \texttt{taxide-tui}.}
+\label{tab:comandos-ex}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+\textbf{Comando Ex} & \textbf{Descripción y Efecto} \\
+\midrule
+\excmd{add <Nombre del taxón>} & Crea e inserta un nuevo taxón primario al final de la matriz, redimensiona los vectores columnares en vivo, marca el dataset como modificado y posiciona el cursor en la primera celda de la nueva especie. Admite comentarios de autoría DELTA entre corchetes angulares, e.g., \texttt{:add Hydra viridissima <Pallas, 1766>}. \\
+\excmd{add+ <Nombre de variante>} & Crea e inserta un ítem variante (\texttt{\#+}) que hereda por defecto los estados del taxón maestro precedente salvo en las celdas que se sobrescriban explícitamente. \\
+\excmd{w} & Serializa y guarda atómicamente los archivos \texttt{SPECS}, \texttt{CHARS} e \texttt{ITEMS} en el directorio del proyecto sin salir de la TUI. \\
+\excmd{wq} & Guarda todos los cambios en disco y cierra la sesión interactiva limpiamente. \\
+\excmd{q} & Cierra la aplicación si no existen cambios sin guardar (muestra advertencia de seguridad si \texttt{*MODIFICADO} está activo). \\
+\excmd{q!} & Cierra la aplicación inmediatamente descartando cualquier edición en memoria no guardada. \\
+\excmd{tree} o \excmd{tree parsimony} & Ejecuta el motor de búsqueda heurística cladística (adición secuencial de Wagner + refinamiento SPR paralelo con parsimonia de Fitch/Sankoff), calcula los índices $CI$, $RI$, $RC$ y $HI$, y abre la vista \textsc{Árbol}. \\
+\excmd{tree upgma} & Calcula la matriz de distancias fenéticas de Gower $D_{ij}$, reconstruye el fenograma ultramétrico mediante agrupamiento UPGMA y lo muestra en la vista \textsc{Árbol}. \\
+\excmd{tree nj} & Calcula la matriz de distancias de Gower $D_{ij}$, reconstruye el árbol aditivo mediante \textit{Neighbor-Joining} (Saitou \& Nei) y lo muestra en la vista \textsc{Árbol}. \\
+\excmd{key} o \excmd{key es} & Genera en memoria la clave dicotómica de identificación optimizada por ganancia de información de Shannon en español y cambia a la vista \textsc{Clave}. \\
+\excmd{key en} & Genera la clave dicotómica de identificación en inglés y cambia a la vista \textsc{Clave}. \\
+\excmd{export nexus <ruta>} & Compila y exporta la matriz resuelta al estándar cladístico \textbf{NEXUS} (\texttt{.nex}). \\
+\excmd{export tnt <ruta>} & Compila y exporta la matriz resuelta al formato de parsimonia de alta velocidad \textbf{TNT} (\texttt{.tnt}). \\
+\excmd{export dwca <directorio>} & Genera un archivo estandarizado de biodiversidad \textbf{Darwin Core Archive} (\texttt{meta.xml}, \texttt{taxon.txt}, \texttt{measurementorfact.txt}). \\
+\excmd{export json <ruta>} & Exporta el dataset resuelto a formato estructurado \textbf{JSON / GeoJSON}. \\
+\excmd{export md <ruta>} & Sintetiza descripciones taxonómicas en lenguaje natural en formato \textbf{Markdown}. \\
+\excmd{export html <ruta>} & Sintetiza una monografía taxonómica completa en \textbf{HTML5}. \\
+\excmd{export hdf5 <ruta>} & Vuelca la matriz columnar SoA alineada a 64 bytes para cómputo \textbf{HPC / AVX-512}. \\
+\excmd{linter} & Cambia el foco directamente al panel de diagnósticos \textsc{Linter}. \\
+\excmd{grid} & Regresa el foco a la vista principal \textsc{Cuadrícula}. \\
+\excmd{theme gruvbox} & Activa el tema cromático por defecto \textbf{Gruvbox Dark} (24-bit TrueColor). \\
+\excmd{theme nord} & Activa el tema cromático ártico \textbf{Nord} (\textit{Polar Night \& Aurora}). \\
+\excmd{theme dracula} & Activa el tema cromático de alto contraste \textbf{Dracula Dark}. \\
+\excmd{theme catppuccin} & Activa el tema cromático pastel nocturno \textbf{Catppuccin Mocha}. \\
+\excmd{help} & Abre la ventana emergente de ayuda interactiva. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =========================================================================
+\section{Guía Paso a Paso: Flujos de Trabajo Frecuentes}
+\label{sec:flujos}
+% =========================================================================
+
+\subsection{Flujo 1: Agregar una Nueva Especie y Codificar sus Caracteres}
+Supongamos que hemos abierto el dataset con \texttt{cabal run taxide -- tui -d test/fixtures/minimal} y deseamos incorporar la especie \textit{Obelia geniculata}:
+
+\begin{enumerate}
+    \item \textbf{Crear la especie:}
+    \begin{itemize}
+        \item \textit{Con el ratón:} Haga click izquierdo en el botón \texttt{[+ Especie (o)]} de la Barra de Acciones Rápidas.
+        \item \textit{Con el teclado:} Pulse la tecla \keystroke{o} (o escriba \texttt{:add }).
+    \end{itemize}
+    En la barra inferior aparecerá \texttt{:add }. Escriba el nombre científico (con autoría opcional):
+    \begin{lstlisting}
+:add Obelia geniculata <Linnaeus, 1758>
+    \end{lstlisting}
+    y presione \keystroke{Enter}. La nueva fila aparecerá al final de la cuadrícula y el cursor se ubicará automáticamente en su Carácter 1 (\texttt{C1}).
+
+    \item \textbf{Codificar caracteres discretos en un solo click:}
+    Con el cursor sobre \texttt{C1} (\textit{cnidocitos}), observe la tercera línea del \textbf{Inspector Semántico} en la parte inferior: verá las píldoras \texttt{[1:present]} y \texttt{[2:absent]}.
+    \begin{itemize}
+        \item Haga \mousebtn{Click Izquierdo} directamente sobre \texttt{[1:present]}. La celda se teñirá de verde (\texttt{\#b8bb26}) con el valor \texttt{1}.
+        \item Alternativamente, presione \keystroke{i}, teclee \texttt{1} y pulse \keystroke{Enter}.
+    \end{itemize}
+
+    \item \textbf{Codificar medidas cuantitativas (\texttt{RN}/\texttt{IN}) y texto (\texttt{TE}):}
+    \begin{itemize}
+        \item Haga click en la celda de la columna \texttt{C3} (\textit{bell diameter in mm}), y vuelva a hacer click (o click derecho / tecla \keystroke{i}) para abrir el modal de edición.
+        \item Escriba \texttt{(2.0-)3.5-6.0(-8.0)} y pulse \keystroke{Enter} (o click en \texttt{[Guardar (Enter)]}).
+        \item Desplácese a \texttt{C4} (\textit{geographic distribution}), abra el editor, escriba \texttt{Cosmopolitan coastal} y confirme.
+    \end{itemize}
+
+    \item \textbf{Guardar en disco:}
+    Haga click en el botón \texttt{[Guardar (:w)]} de la barra de herramientas o ejecute \texttt{:w} seguido de \keystroke{Enter}. El indicador superior cambiará de \texttt{*MODIFICADO} a \texttt{GUARDADO}.
+\end{enumerate}
+
+\subsection{Flujo 2: Propagación Reactiva del DAG y Auditoría con el Linter}
+TAXIDE evalúa el grafo acíclico dirigido (DAG) de dependencias biológicas en cada edición:
+\begin{enumerate}
+    \item En el dataset \texttt{minimal}, la directiva \texttt{*DEPENDENT CHARACTERS 1,2:2} establece que si el Carácter 1 (\textit{cnidocitos}) toma el estado \texttt{2} (\textit{absent}), el Carácter 2 (\textit{capsule shape}) es biológicamente inaplicable.
+    \item Seleccione el Carácter 1 de cualquier taxón y haga click en la píldora \texttt{[2:absent]}. Observará que la celda adyacente (\texttt{C2}) pasa instantáneamente a mostrar \texttt{-} en gris atenuado (\texttt{\#928374}) y el Inspector indica \texttt{Origen: Inaplicable por dependencia de C1}.
+    \item Si por error intenta asignar un estado activo (por ejemplo \texttt{1}) en \texttt{C2} mientras \texttt{C1} vale \texttt{2}, la celda \texttt{C2} se iluminará en \textbf{rojo intenso} (\texttt{\#fb4934}) y el contador de la pestaña \texttt{[2:Linter (1)]} se incrementará con el diagnóstico \texttt{TAX-DEP-002}.
+    \item Haciendo click sobre la pestaña \texttt{[2:Linter]} verá la explicación detallada del conflicto, y haciendo click sobre la fila del diagnóstico volverá directamente a la celda infractora para corregirla (por ejemplo, pulsando la tecla rápida \keystroke{-} o haciendo click en \texttt{[- Inaplicable]}).
+\end{enumerate}
+
+% =========================================================================
+\section{Referencia del Ejecutable Maestro en Línea de Comandos (CLI)}
+\label{sec:cli}
+% =========================================================================
+
+Además del entorno interactivo \texttt{taxide tui}, el binario unificado \texttt{taxide} permite ejecutar todas las etapas analíticas en modo por lotes (\textit{batch} / CI/CD):
+
+\begin{lstlisting}[language=bash]
+# 1. Lanzar la interfaz interactiva de terminal (TUI)
+taxide tui -d test/fixtures/minimal
+
+# 2. Auditar un dataset DELTA con el Linter ontológico y cladístico
+taxide lint -d test/fixtures/minimal
+
+# 3. Formatear y canonizar archivos SPECS, CHARS e ITEMS
+taxide fmt -d test/fixtures/minimal -o build/formatted
+
+# 4. Inferencia filogenética (parsimony | upgma | nj) con soporte SPR/TBR
+taxide tree -d test/fixtures/minimal -m parsimony --swap spr
+
+# 5. Generar clave dicotómica de identificación por entropía de Shannon
+taxide key -d test/fixtures/minimal -l es -f markdown
+
+# 6. Compilar y exportar hacia formatos externos (nexus|tnt|dwca|json|md|html|hdf5)
+taxide compile -d test/fixtures/minimal -f nexus -o build/matrix.nex
+\end{lstlisting}
+
+\end{document}
+

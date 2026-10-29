@@ -26,4 +26,10 @@ cradle:
       component: "taxide-export:exe:taxide-compile"
     - path: "./taxide-export/test"
       component: "taxide-export:test:taxide-export-test"
+    - path: "./taxide-tui/src"
+      component: "taxide-tui:lib:taxide-tui"
+    - path: "./taxide-tui/test"
+      component: "taxide-tui:test:taxide-tui-test"
+    - path: "./taxide-app/app"
+      component: "taxide-app:exe:taxide"
 

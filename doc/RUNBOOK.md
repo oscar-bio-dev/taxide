@@ -73,7 +73,8 @@ taxide/
 │   └── test/Main.hs             # Pruebas de Round-Trip y propiedades Hedgehog
 ├── taxide-engine/               # [Fase 2 y 4] Inferencia en memoria, DAG, Fitch, Sankoff, Gower
 ├── taxide-export/               # [Fase 3] Compiladores NEXUS, TNT, DwC-A, JSON, Markdown, HDF5
-└── taxide-tui/                  # [Fase 5] Interfaz interactiva Brick 24-bit TrueColor
+├── taxide-tui/                  # [Fase 5] Interfaz interactiva Brick 24-bit TrueColor
+└── taxide-app/                  # [Fase 5] Ejecutable maestro unificado 'taxide' (v0.5.0 / v1.0.0)
 ```
 
 ### Tabla de Responsabilidades
@@ -85,6 +86,7 @@ taxide/
 | `taxide-engine` | Lógica & Análisis | Resolución monoidal de variantes (`#+`), evaluación del DAG de dependencias, optimización de Fitch (`Word64` bitsets), programación dinámica de Sankoff y distancias de Gower. |
 | `taxide-export` | Transpilación | Compilación multi-target hacia NEXUS, TNT, Darwin Core Archive (DwC-A), Markdown botánico y HDF5. |
 | `taxide-tui` | Interfaz de Usuario | TUI interactiva con arquitectura Model-View-Update (`brick`/`vty`), navegación VIM y linter reactivo. |
+| `taxide-app` | Orquestación CLI | Ejecutable maestro unificado `taxide` (`tui`, `fmt`, `lint`, `compile`, `describe`, `tree`, `key`). |
 
 ---
 
@@ -302,21 +304,33 @@ cabal run taxide-key -- -i $D --format md        --lang es -o clave_craspedacust
 
 ---
 
-### 4.6 Sesión Interactiva en Terminal (TUI)
+### 4.6 Sesión Interactiva en Terminal (TUI) y Ejecutable Maestro `taxide` (v0.5.0 / Release v1.0.0)
 
 ```bash
-taxide tui --dataset=./examples/craspedacusta
+# Iniciar la TUI interactiva mediante el ejecutable maestro unificado
+cabal run taxide -- tui --dataset=./examples/craspedacusta
+
+# Invocar subcomandos desde el ejecutable maestro 'taxide'
+cabal run taxide -- fmt      -i ./examples/craspedacusta --check
+cabal run taxide -- lint     -i ./examples/craspedacusta -v
+cabal run taxide -- compile  -i ./examples/craspedacusta -t nexus -o craspedacusta.nex
+cabal run taxide -- describe -i ./examples/craspedacusta --lang es -o craspedacusta.md
+cabal run taxide -- tree     -i ./examples/craspedacusta --method parsimony --search spr --format report
+cabal run taxide -- key      -i ./examples/craspedacusta --style bracketed --lang es
 ```
 
 #### Atajos de Teclado y Controles Modales (Estilo VIM)
 
-- `h`, `j`, `k`, `l` o `Flechas`: Desplazamiento del cursor bidimensional sobre la cuadrícula de taxones y caracteres.
-- `i` / `Enter`: Modo edición de celda para el atributo seleccionado.
+- `h`, `j`, `k`, `l` o `Flechas`: Desplazamiento del cursor bidimensional sobre la cuadrícula virtualizada de taxones y caracteres.
+- `g` / `G`, `0` / `$`, `Ctrl+d` / `Ctrl+u`: Saltos rápidos al inicio/final de filas, columnas y media página.
+- `i` / `Enter`: Modo edición de celda para el atributo seleccionado (con propagación instantánea del DAG de `*DEPENDENT CHARACTERS`).
 - `Esc`: Volver al modo Normal.
-- `:w`: Guardar dataset canónico en memoria / disco.
-- `:q`: Salir de la sesión TUI.
-- `Tab`: Alternar entre panel de Hoja de Cálculo, Inspector de Diagnósticos Linter y Árbol Cladístico.
-- `/`: Búsqueda reactiva de taxones o caracteres por nombre.
+- `:w` / `:wq` / `:q!`: Guardar dataset canónico en disco y/o salir de la sesión TUI.
+- `:tree [parsimony|upgma|nj]`: Reconstruir cladograma o fenograma y activar la vista de árbol.
+- `:key [es|en]`: Generar clave dicotómica por entropía de Shannon y activar la vista de clave.
+- `:export [nexus|tnt|dwca|json|md|html|hdf5] <archivo>`: Compilar y exportar en vivo la matriz actual.
+- `Tab`: Alternar entre Hoja de Cálculo Matricial, Inspector de Diagnósticos Linter, Visor de Árbol Filogenético y Visor de Clave Dicotómica.
+- `/`: Búsqueda incremental de taxones o caracteres por nombre.
 
 ---
 

@@ -47,6 +47,7 @@ module Taxide.Engine.Tree
 
 import Control.DeepSeq (NFData)
 import Data.Hashable (Hashable)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Vector (Vector)
@@ -220,24 +221,28 @@ rerootSubtreeAll tree =
          : descend a (PhyloNode b ctx Nothing)
         ++ descend b (PhyloNode a ctx Nothing)
 
--- | Genera la vecindad SPR (*Subtree Pruning and Regrafting*) completa de un árbol.
-sprNeighbors :: Eq a => PhyloTree a -> [PhyloTree a]
+-- | Genera la vecindad SPR (*Subtree Pruning and Regrafting*) completa de un árbol,
+-- deduplicando topologías idénticas mediante 'Set.fromList'.
+sprNeighbors :: Ord a => PhyloTree a -> [PhyloTree a]
 sprNeighbors tree =
   let clean = clearBranchLengths tree
-  in [ candidate
-     | (pruned, residual) <- pruneAllSubtrees clean
-     , candidate <- regraftSubtreeEverywhere pruned residual
-     , candidate /= clean
-     ]
+  in Set.toList . Set.fromList $
+       [ candidate
+       | (pruned, residual) <- pruneAllSubtrees clean
+       , candidate <- regraftSubtreeEverywhere pruned residual
+       , candidate /= clean
+       ]
 
--- | Genera la vecindad TBR (*Tree Bisection and Reconnection*) completa de un árbol.
-tbrNeighbors :: Eq a => PhyloTree a -> [PhyloTree a]
+-- | Genera la vecindad TBR (*Tree Bisection and Reconnection*) completa de un árbol,
+-- deduplicando topologías idénticas mediante 'Set.fromList'.
+tbrNeighbors :: Ord a => PhyloTree a -> [PhyloTree a]
 tbrNeighbors tree =
   let clean = clearBranchLengths tree
-  in [ candidate
-     | (pruned, residual) <- pruneAllSubtrees clean
-     , rerooted <- rerootSubtreeAll pruned
-     , candidate <- regraftSubtreeEverywhere rerooted residual
-     , candidate /= clean
-     ]
+  in Set.toList . Set.fromList $
+       [ candidate
+       | (pruned, residual) <- pruneAllSubtrees clean
+       , rerooted <- rerootSubtreeAll pruned
+       , candidate <- regraftSubtreeEverywhere rerooted residual
+       , candidate /= clean
+       ]
 

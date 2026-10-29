@@ -29,7 +29,7 @@
 }
 
 % --- Versión del documento (fecha fija para compilaciones reproducibles) ---
-\newcommand{\taxideversion}{0.4.0}
+\newcommand{\taxideversion}{1.0.0}
 \newcommand{\taxidedate}{28 de octubre de 2026}
 
 % --- Configuración para Listados de Código Haskell ---
@@ -138,6 +138,8 @@ Síntesis en lenguaje natural (Markdown/HTML5) & \texttt{Export.Natural} & \S\re
 Serializador JSON/GeoJSON & \texttt{Export.Json} & \S\ref{sec:export} & Implementado \\
 Contenedor binario columnar alineado a 64 B & \texttt{Export.BinaryHPC} & \S\ref{sec:export} & Implementado \\
 CLI \texttt{taxide-compile} & \texttt{taxide-export} & \S\ref{sec:export} & Implementado \\
+Interfaz TUI reactiva Gruvbox 24-bit y edición modal & \texttt{taxide-tui} & \S\ref{sec:tui} & Implementado \\
+Ejecutable maestro unificado \texttt{taxide} & \texttt{taxide-app} & \S\ref{sec:tui} & Implementado \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -705,6 +707,63 @@ Los caracteres \texttt{IN}/\texttt{RN} se discretizan a \texttt{OM} con $k$ clas
 
 \subsection{Contenedor binario columnar}
 Todos los campos son \textit{little-endian}. El archivo comienza por una cabecera de 64 bytes (firma \texttt{TAXIHPC1}, versión, marca de endianness, alineación, $N$, $M$, número de secciones, tamaño de cabecera y tamaño total), seguida de una tabla de secciones de 64 bytes por tensor. Cada tensor ---máscaras \texttt{Word64}, etiquetas \texttt{Word8}, cinco vectores \texttt{Double} por carácter cuantitativo, tipos de carácter y nombres de taxón--- comienza en un desplazamiento múltiplo de 64 y se rellena con ceros hasta el siguiente múltiplo, de modo que puede mapearse en memoria y cargarse con instrucciones AVX-512 alineadas sin copia.
+
+% =========================================================================
+\section{Arquitectura Reactiva de Interfaz de Terminal y Edición Incremental}
+\label{sec:tui}
+% =========================================================================
+
+El paquete \texttt{taxide-tui} y el ejecutable maestro unificado \texttt{taxide} (\texttt{taxide-app}) culminan la arquitectura de TAXIDE dotando al taxónomo de un entorno interactivo de terminal en 24 bits (\textit{TrueColor}) construido sobre \texttt{brick} y \texttt{vty}, gobernado por transiciones de estado puras y verificables en modo \textit{headless}.
+
+\subsection{Máquina de Estados Modal Puramente Funcional (Model-View-Update)}
+El estado completo de una sesión interactiva se formaliza mediante la séxtupla estricta
+\begin{equation}
+\label{eq:tui_state}
+\Sigma = \big(\mathcal{D},\; \mathcal{M},\; \Delta_{\text{overlay}},\; \kappa,\; \mu,\; \nu\big),
+\end{equation}
+donde:
+\begin{itemize}
+    \item $\mathcal{D}$ es el dataset DELTA en memoria (\texttt{DeltaDataset}: \texttt{SPECS}, \texttt{CHARS}, \texttt{ITEMS}),
+    \item $\mathcal{M}$ es la matriz columnar resuelta (\texttt{ColumnarMatrix}) junto con los taxones resueltos y el vector de diagnósticos activos $\Lambda$,
+    \item $\Delta_{\text{overlay}}$ es el mapa de ediciones incrementales sobre atributos $(T_i, C_j)$ aplicados durante la sesión,
+    \item $\kappa = (r, c) \in \{0,\dots,N-1\} \times \{1,\dots,M\}$ es la posición del cursor bidimensional sobre la cuadrícula de taxones y caracteres,
+    \item $\mu \in \{\textsc{Normal},\; \textsc{Edit},\; \textsc{Command},\; \textsc{Search}\}$ es el modo de operación modal estilo VIM, y
+    \item $\nu \in \{\textsc{Grid},\; \textsc{Linter},\; \textsc{Tree},\; \textsc{Key}\}$ es la vista activa proyectada en el panel principal.
+\end{itemize}
+La semántica operacional del bucle de eventos se define como un endomorfismo determinista puro libre de efectos de entrada/salida:
+\begin{equation}
+\label{eq:tui_step}
+\tau \colon \Sigma \times \mathrm{Event}_{\text{Vty}} \longrightarrow \Sigma.
+\end{equation}
+El aislamiento de~\eqref{eq:tui_step} respecto al subsistema de E/S física permite inyectar secuencias arbitrarias de eventos sintéticos $[e_1, \dots, e_k]$ en pruebas automatizadas (\texttt{foldl' stepTUIEvent}\;$\Sigma_0$) sin requerir un dispositivo pseudo-terminal (\texttt{TTY}).
+
+\subsection{Invariante de Virtualización del Viewport 2D}
+Para garantizar una tasa de refresco constante a $60\text{ FPS}$ con independencia de las dimensiones totales de la matriz morfológica $N \times M$, el renderizador declarativo nunca construye widgets para la totalidad de las celdas, sino únicamente para la submatriz contenida en el \emph{viewport} visible. Dado el desplazamiento de esquina superior izquierda $(r_0, c_0)$ y la capacidad útil de celdas de la ventana de terminal $(H_{\text{rows}}, W_{\text{cols}})$, la región proyectada es
+\begin{equation}
+\label{eq:viewport}
+\mathcal{V}(r_0, c_0, H_{\text{rows}}, W_{\text{cols}}) = \big[r_0,\; \min(N-1,\; r_0 + H_{\text{rows}} - 1)\big] \times \big[c_0,\; \min(M,\; c_0 + W_{\text{cols}} - 1)\big].
+\end{equation}
+Ante cualquier movimiento del cursor $\kappa = (r, c)$, las coordenadas de desplazamiento $(r_0, c_0)$ se ajustan automáticamente para preservar el invariante $(r, c) \in \mathcal{V}(r_0, c_0, H_{\text{rows}}, W_{\text{cols}})$. En consecuencia, el coste espacial y temporal de construcción de la escena por fotograma queda estrictamente acotado por
+\begin{equation}
+T_{\text{render}}(\Sigma) = O(H_{\text{rows}} \cdot W_{\text{cols}}) \ll O(NM).
+\end{equation}
+
+\subsection{Propagación Reactiva Incremental del DAG y Linter en Vivo}
+Cuando el usuario confirma una edición sintáctica en la celda $(T_i, C_j)$ desde el modo $\textsc{Edit}$, la cadena introducida se analiza en memoria mediante el combinador \texttt{pAttribute} de \texttt{taxide-delta}, actualizando el atributo en $\Delta_{\text{overlay}}$ y $\mathcal{D}$. Acto seguido se invoca la composición pura $\Lambda \circ \mathcal{M} \circ \Delta \circ \mathcal{J} \circ \mathcal{V}$ de la Ecuación~\eqref{eq:pipeline}:
+\begin{enumerate}
+    \item La evaluación topológica del DAG $\mathcal{G} = (\mathcal{C}, E)$ propaga en tiempo $O(|\mathcal{C}| + |E|)$ la inaplicabilidad transitiva hacia todos los caracteres descendientes $d \in \mathcal{D}^+(C_j)$ cuando el nuevo estado de $C_j$ satisface la condición de bloqueo $\emptyset \neq \Sobs(T_i, C_j) \subseteq \Sinh(C_j, d)$.
+    \item Si una edición asigna un estado activo a un carácter dependiente $d$ cuyo controlador permanece en su estado inhabilitante, el motor registra de forma inmediata la violación biológica \texttt{TAX-DEP-002} en el panel del linter $\Lambda$ y restablece la celda en la matriz resuelta $\mathcal{M}$ al pseudo-valor inaplicable \texttt{-}.
+\end{enumerate}
+
+\subsection{Codificación Cromática Semántica (Paleta Gruvbox Dark 24-bit TrueColor)}
+Cada celda $(T_i, C_j)$ con representación columnar $(\tau_{ij}, \beta_{ij})$ y conjunto de diagnósticos asociados $\Lambda_{ij}$ se proyecta a un atributo cromático determinista en el espacio RGB de 24 bits (paleta \emph{Gruvbox Dark}):
+\begin{itemize}
+    \item \textbf{Fondo base y texto primario:} lienzo general en gris carbón \texttt{\#282828} $(40, 40, 40)$ y tipografía principal en crema cálido \texttt{\#ebdbb2} $(235, 219, 178)$.
+    \item \textbf{Estado fenotípico aplicable válido ($\tau_{ij} = \textsc{Válido}, \; \Lambda_{ij} = \emptyset$):} verde orgánico \texttt{\#b8bb26} $(184, 187, 38)$ para valores codificados explícitamente y azul verdoso \texttt{\#83a598} $(131, 165, 152)$ para valores heredados o inyectados por \texttt{*IMPLICIT VALUES}.
+    \item \textbf{Pseudo-valor inaplicable ($\tau_{ij} = \texttt{-}$):} gris atenuado \texttt{\#928374} $(146, 131, 116)$, señalizando visualmente las regiones podadas por el DAG de dependencias.
+    \item \textbf{Incertidumbre total ($\tau_{ij} \in \{\texttt{U}, \texttt{V}\}$) o advertencia ($\textsc{Warning} \in \Lambda_{ij}$):} naranja ámbar \texttt{\#fe8019} $(254, 128, 25)$.
+    \item \textbf{Violación biológica o matemática ($\textsc{Error} \in \Lambda_{ij}$, e.g.\ \texttt{TAX-DEP-002}, \texttt{TAX-MATH-001}):} rojo carmesí \texttt{\#fb4934} $(251, 73, 52)$ en negrita.
+\end{itemize}
 
 % =========================================================================
 \section{Conclusión y Visión de Futuro}

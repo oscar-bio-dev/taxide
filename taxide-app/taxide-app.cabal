@@ -1,0 +1,51 @@
+cabal-version:      3.0
+name:               taxide-app
+version:            1.0.0.0
+synopsis:           Ejecutable maestro unificado del entorno TAXIDE (v1.0.0)
+description:        Punto de entrada CLI unificado de TAXIDE que integra la interfaz interactiva
+                    de terminal (tui), el formateador canónico (fmt), el linter ontológico y
+                    cladístico (lint), el compilador multi-objetivo (compile/describe), el motor
+                    filogenético y fenético (tree) y el generador de claves dicotómicas (key).
+license:            Apache-2.0
+author:             TAXIDE Core Architecture Team
+maintainer:         core@taxide.org
+category:           Bioinformatics, Scientific Computing
+build-type:         Simple
+
+common common-options
+    default-language:   GHC2021
+    default-extensions:
+        StrictData
+        OverloadedStrings
+        DeriveGeneric
+        DeriveAnyClass
+        BangPatterns
+    ghc-options:
+        -Wall
+        -Wcompat
+        -Widentities
+        -Wincomplete-record-updates
+        -Wincomplete-uni-patterns
+        -Wmissing-home-modules
+        -Wpartial-fields
+        -Wredundant-constraints
+
+executable taxide
+    import:             common-options
+    hs-source-dirs:     app
+    main-is:            Main.hs
+    ghc-options:        -O2 -threaded -rtsopts -with-rtsopts=-N
+    build-depends:
+        base                 >= 4.18 && < 5,
+        bytestring           >= 0.11,
+        containers           >= 0.6,
+        directory            >= 1.3,
+        filepath             >= 1.4,
+        optparse-applicative >= 0.18,
+        text                 >= 2.0,
+        taxide-core,
+        taxide-delta,
+        taxide-engine,
+        taxide-export,
+        taxide-tui
+
