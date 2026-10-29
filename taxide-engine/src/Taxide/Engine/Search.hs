@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -27,6 +28,9 @@ module Taxide.Engine.Search
 
 import Control.DeepSeq (NFData)
 import Control.Parallel.Strategies (parListChunk, rdeepseq, withStrategy)
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import GHC.Generics (Generic)
 
 import Taxide.Core.Specs (SpecsDef)

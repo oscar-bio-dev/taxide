@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -43,6 +44,9 @@ module Taxide.Engine.Sankoff
 
 import Control.DeepSeq (NFData)
 import Data.Bits (bit, testBit, (.|.))
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import qualified Data.Map.Strict as Map
 import qualified Data.Vector.Unboxed as VU
 import Data.Word (Word64)

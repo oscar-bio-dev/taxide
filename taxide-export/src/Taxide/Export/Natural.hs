@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -26,6 +27,9 @@ module Taxide.Export.Natural
   , renderNaturalHtml
   ) where
 
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import Data.Text (Text)
