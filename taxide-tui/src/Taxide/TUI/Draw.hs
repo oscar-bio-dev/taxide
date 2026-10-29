@@ -25,6 +25,7 @@ module Taxide.TUI.Draw
 import Brick
   ( AttrName
   , Padding (..)
+  , ViewportType (Vertical)
   , Widget
   , clickable
   , hBox
@@ -36,6 +37,7 @@ import Brick
   , txt
   , vBox
   , vLimit
+  , viewport
   , withAttr
   , withBorderStyle
   )
@@ -307,7 +309,7 @@ drawInspectorPanel st =
       diagWidget = case cellDiags of
         [] ->
           withAttr attrCellValid $
-            padRight Max (txt " [✓] Sin violaciones ontológicas en esta celda. (Teclas rápidas: '-' Inaplicable | 'u' Desconocido | 'i' Editar)")
+            padRight Max (txt " [✓] Sin violaciones ontológicas en esta celda. (Teclas rápidas: '-' Inaplicable | 'u' Desconocido | 'x'/Del Restaurar | 'i' Editar)")
         (d : _) ->
           let dAttr = case diagSeverity d of
                 SeverityError   -> attrCellError
@@ -374,7 +376,7 @@ renderOriginLabel orig = case orig of
     "Inaplicable por DAG (*DEPENDENT CHARACTERS controlador #" <> T.pack (show ctrl) <> ")"
 
 -- | Vista dedicada al Inspector de Diagnósticos Linter ($\nu = \textsc{Linter}$),
--- con filas clicables para saltar directamente a la celda infractora.
+-- con filas clicables para saltar directamente a la celda infractora y soporte de scroll vertical.
 drawLinterView :: AppState -> Widget ResourceName
 drawLinterView st =
   let diags = asDiagnostics st
@@ -398,12 +400,12 @@ drawLinterView st =
             in case mJump of
                  Just (rIdx, cIdx) -> clickable (ClickDiagJump rIdx cIdx) lineW
                  Nothing           -> lineW
-          | d <- take (max 10 (asVpRows st)) diags
+          | d <- diags
           ]
-      filler = clickable LinterViewport (padBottom Max (padRight Max (txt " ")))
   in withBorderStyle unicodeRounded $
-       borderWithLabel (withAttr attrHeader (txt " Auditoría Completa del Linter Ontológico y Cladístico (Click diagnóstico para saltar a celda) ")) $
-         vBox (rows ++ [filler])
+       borderWithLabel (withAttr attrHeader (txt " Auditoría Completa del Linter Ontológico y Cladístico (Click diagnóstico para saltar | j/k/Rueda: Scroll) ")) $
+         clickable LinterViewport $
+           viewport LinterViewport Vertical (vBox rows)
 
 -- | Vista dedicada al Árbol Filogenético / Fenético ($\nu = \textsc{Tree}$).
 drawTreeView :: AppState -> Widget ResourceName
@@ -416,10 +418,10 @@ drawTreeView st =
         [ padRight Max (txt (" " <> l))
         | l <- T.lines content
         ]
-      filler = clickable TreeViewport (padBottom Max (padRight Max (txt " ")))
   in withBorderStyle unicodeRounded $
-       borderWithLabel (withAttr attrHeader (txt " Visor de Cladograma / Fenograma (ASCII/Unicode & Newick) ")) $
-         vBox (linesWidgets ++ [filler])
+       borderWithLabel (withAttr attrHeader (txt " Visor de Cladograma / Fenograma (ASCII/Unicode & Newick | j/k/PgDn/Rueda: Scroll) ")) $
+         clickable TreeViewport $
+           viewport TreeViewport Vertical (vBox linesWidgets)
 
 -- | Vista dedicada a la Clave Dicotómica ($\nu = \textsc{Key}$).
 drawKeyView :: AppState -> Widget ResourceName
@@ -432,10 +434,10 @@ drawKeyView st =
         [ padRight Max (txt (" " <> l))
         | l <- T.lines content
         ]
-      filler = clickable KeyViewport (padBottom Max (padRight Max (txt " ")))
   in withBorderStyle unicodeRounded $
-       borderWithLabel (withAttr attrHeader (txt " Clave Dicotómica de Identificación (Entropía de Shannon) ")) $
-         vBox (linesWidgets ++ [filler])
+       borderWithLabel (withAttr attrHeader (txt " Clave Dicotómica de Identificación (Entropía de Shannon | j/k/PgDn/Rueda: Scroll) ")) $
+         clickable KeyViewport $
+           viewport KeyViewport Vertical (vBox linesWidgets)
 
 -- | Ventana modal emergente en 'ModeEdit' con botones clicables de estados y confirmación.
 drawEditModal :: AppState -> Text -> Widget ResourceName
@@ -498,7 +500,7 @@ drawHelpModal =
             , txt "  • g / G  |  0 / $             : Primera/última fila  |  Primera/última columna"
             , txt "  • Ctrl+d / Ctrl+u / PgDn/PgUp : Avanzar / retroceder media página"
             , txt "  • i / e / Enter               : Editar expresión DELTA de la celda activa"
-            , txt "  • -  |  u                     : Marcar celda como Inaplicable (-) o Desconocida (U)"
+            , txt "  • -  |  u  |  x / Del         : Inaplicable (-) | Desconocida (U) | Restaurar heredado/implícito"
             , txt "  • o  |  O                     : Agregar nueva especie (:add) o variante (:add+)"
             , txt "  • Tab  |  1, 2, 3, 4          : Alternar entre Matriz, Linter, Árbol y Clave"
             , txt "  • /texto                      : Buscar taxón o carácter por nombre"

@@ -22,13 +22,24 @@ module Taxide.TUI.Update
   , applyTerminalResize
   , executeCommandPure
   , applyCellEditText
+  , clearCellAttribute
 
     -- * Manejador Monádico para Brick
   , handleAppEvent
   , flushPendingIOActions
   ) where
 
-import Brick (BrickEvent (..), EventM, get, halt, put)
+import Brick
+  ( BrickEvent (..)
+  , EventM
+  , get
+  , halt
+  , put
+  , vScrollBy
+  , vScrollToBeginning
+  , vScrollToEnd
+  , viewportScroll
+  )
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Lazy as BL
@@ -255,6 +266,10 @@ stepNormalMode st ev = case ev of
   Vty.EvKey (Vty.KChar '-') [] -> applyCellEditText "-" st
   Vty.EvKey (Vty.KChar 'u') [] -> applyCellEditText "U" st
 
+  -- Restaurar atributo heredado / implícito o limpiar codificación explícita (x o Del)
+  Vty.EvKey (Vty.KChar 'x') [] -> clearCellAttribute st
+  Vty.EvKey Vty.KDel        [] -> clearCellAttribute st
+
   -- Entrar al Modo Edición (i, e o Enter)
   Vty.EvKey (Vty.KChar 'i') [] -> enterEditMode st
   Vty.EvKey (Vty.KChar 'e') [] -> enterEditMode st
@@ -368,6 +383,36 @@ applyCellEditText rawInput st =
                  "Celda (T" <> T.pack (show (row + 1)) <> ", C" <> T.pack (show col)
                  <> ") actualizada a '" <> renderAttribute newAttr <> "'."
          in stRecomputed { asStatusMsg = statusTxt }
+
+-- | Elimina el atributo explícito del carácter bajo el cursor ('asCursorCol')
+-- en el 'ItemDef' de la fila activa ('asCursorRow') y re-ejecuta el pipeline
+-- semántico ('recomputePipelineState'), permitiendo que la celda recupere
+-- automáticamente su valor heredado de variante ('#+'), su '*IMPLICIT VALUES'
+-- o quede no codificada.
+clearCellAttribute :: AppState -> AppState
+clearCellAttribute st =
+  let row      = asCursorRow st
+      col      = asCursorCol st
+      oldItems = dsItems (asDataset st)
+      updatedItems =
+        [ if idx == row
+            then item { itemAttributes = [ (c, a) | (c, a) <- itemAttributes item, c /= col ] }
+            else item
+        | (idx, item) <- zip [0 ..] oldItems
+        ]
+      newDataset   = (asDataset st) { dsItems = updatedItems }
+      newOverlay   = Map.delete (row, col) (asOverlay st)
+      stRecomputed = recomputePipelineState $ st
+        { asDataset = newDataset
+        , asOverlay = newOverlay
+        , asMode    = ModeNormal
+        , asDirty   = True
+        }
+  in stRecomputed
+       { asStatusMsg =
+           "Atributo explícito eliminado en (T" <> T.pack (show (row + 1))
+           <> ", C" <> T.pack (show col) <> "); estado heredado/implícito restaurado."
+       }
 
 -- | Determina qué caracteres dependientes quedan inhabilitados transitivamente cuando
 -- el carácter controlador @col@ se edita a @newAttr@.
@@ -756,21 +801,58 @@ adjustViewport st =
        , asVpColOffset = max 1 c0'
        }
 
+-- | Identifica el viewport vertical de Brick asociado a las vistas de Linter, Árbol o Clave.
+focusedViewportName :: FocusPanel -> Maybe ResourceName
+focusedViewportName FocusGrid   = Nothing
+focusedViewportName FocusLinter = Just LinterViewport
+focusedViewportName FocusTree   = Just TreeViewport
+focusedViewportName FocusKey    = Just KeyViewport
+
 -- | Manejador de eventos de Brick que delega teclado y redimensionado a 'stepTUIEvent',
--- clics y rueda de ratón a 'stepTUIMouse', y ejecuta efectos de guardado/exportación en 'IO'.
+-- clics y rueda de ratón a 'stepTUIMouse', scroll vertical de viewports en 'FocusLinter',
+-- 'FocusTree' y 'FocusKey' mediante 'vScrollBy', y ejecuta efectos de E/S en 'IO'.
 handleAppEvent :: BrickEvent ResourceName e -> EventM ResourceName AppState ()
 handleAppEvent (VtyEvent vtyEv) = do
   st <- get
-  let st' = stepTUIEvent st vtyEv
-  stFinal <- liftIO (flushPendingIOActions st')
-  put stFinal
-  when (asShouldQuit stFinal) halt
+  case focusedViewportName (asFocus st) of
+    Just vpName | asMode st == ModeNormal && not (asShowHelp st) -> do
+      let vScroll  = viewportScroll vpName
+          halfPage = max 1 (asVpRows st `div` 2)
+      case vtyEv of
+        Vty.EvKey (Vty.KChar 'j') []          -> vScrollBy vScroll 1
+        Vty.EvKey Vty.KDown       []          -> vScrollBy vScroll 1
+        Vty.EvKey (Vty.KChar 'k') []          -> vScrollBy vScroll (-1)
+        Vty.EvKey Vty.KUp         []          -> vScrollBy vScroll (-1)
+        Vty.EvKey Vty.KPageDown   []          -> vScrollBy vScroll halfPage
+        Vty.EvKey (Vty.KChar 'd') [Vty.MCtrl] -> vScrollBy vScroll halfPage
+        Vty.EvKey Vty.KPageUp     []          -> vScrollBy vScroll (-halfPage)
+        Vty.EvKey (Vty.KChar 'u') [Vty.MCtrl] -> vScrollBy vScroll (-halfPage)
+        Vty.EvKey (Vty.KChar 'g') []          -> vScrollToBeginning vScroll
+        Vty.EvKey Vty.KHome       []          -> vScrollToBeginning vScroll
+        Vty.EvKey (Vty.KChar 'G') []          -> vScrollToEnd vScroll
+        Vty.EvKey Vty.KEnd        []          -> vScrollToEnd vScroll
+        _ -> do
+          let st' = stepTUIEvent st vtyEv
+          stFinal <- liftIO (flushPendingIOActions st')
+          put stFinal
+          when (asShouldQuit stFinal) halt
+    _ -> do
+      let st' = stepTUIEvent st vtyEv
+      stFinal <- liftIO (flushPendingIOActions st')
+      put stFinal
+      when (asShouldQuit stFinal) halt
 handleAppEvent (MouseDown rn btn mods _loc) = do
   st <- get
-  let st' = stepTUIMouse st rn btn mods
-  stFinal <- liftIO (flushPendingIOActions st')
-  put stFinal
-  when (asShouldQuit stFinal) halt
+  case (focusedViewportName (asFocus st), btn) of
+    (Just vpName, Vty.BScrollUp) | asMode st == ModeNormal && not (asShowHelp st) ->
+      vScrollBy (viewportScroll vpName) (-1)
+    (Just vpName, Vty.BScrollDown) | asMode st == ModeNormal && not (asShowHelp st) ->
+      vScrollBy (viewportScroll vpName) 1
+    _ -> do
+      let st' = stepTUIMouse st rn btn mods
+      stFinal <- liftIO (flushPendingIOActions st')
+      put stFinal
+      when (asShouldQuit stFinal) halt
 handleAppEvent _ = pure ()
 
 -- | Ejecuta y vacía la cola de acciones de E/S pendientes ('asPendingIO').

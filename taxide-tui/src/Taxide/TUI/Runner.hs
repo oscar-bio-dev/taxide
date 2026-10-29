@@ -25,6 +25,7 @@ module Taxide.TUI.Runner
   , stepTUIEvents
   , stepTUIMouse
   , applyTerminalResize
+  , clearCellAttribute
   ) where
 
 import Brick (App (..), defaultMain, getVtyHandle, modify, neverShowCursor)
@@ -42,6 +43,7 @@ import Taxide.TUI.State (AppState (..), ResourceName, initAppState)
 import Taxide.TUI.Theme (themeAttrMap)
 import Taxide.TUI.Update
   ( applyTerminalResize
+  , clearCellAttribute
   , handleAppEvent
   , stepTUIEvent
   , stepTUIEvents

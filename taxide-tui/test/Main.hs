@@ -56,6 +56,7 @@ import Taxide.TUI.State
 import Taxide.TUI.Theme
   ( ThemeName (..)
   , attrCellError
+  , attrCellImplicit
   , attrCellInapplicable
   , attrCellValid
   , themePalette
@@ -336,5 +337,34 @@ main = defaultMain $ testGroup "TAXIDE TUI Headless Verification Suite (Fase 5)"
       -- Click en botón [Tema: Gruvbox] alterna al siguiente tema (Nord)
       let stCycled = stepTUIMouse stGruvbox (ClickQuickAction ActCycleTheme) Vty.BLeft []
       asTheme stCycled @?= ThemeNord
+
+  , testCase "8. Restauración de atributo heredado/implícito con 'x' y 'Del' (clearCellAttribute)" $ do
+      let st0 = initAppState "." fixtureDataset
+          -- Agregar variante '#+ Ephedra var. minor' al final (fila 3), que hereda de Ephedra distachya (fila 2)
+          stVar = stepTUIEvents st0 ([keyChar ':'] ++ typeTextEvents "add+ Ephedra var. minor" ++ [keyEnter])
+          -- Mover cursor a columna 3 (porte) de la variante (fila 3, columna 3)
+          stAtVarC3 = stepTUIEvents stVar [keyChar 'l', keyChar 'l']
+
+      asCursorRow stAtVarC3 @?= 3
+      asCursorCol stAtVarC3 @?= 3
+      -- Inicialmente (3, 3) es heredado de Ephedra distachya con estado "2"
+      cellAttrAndText 3 3 stAtVarC3 @?= (attrCellImplicit, "2")
+      fmap asOrigin (lookupCellAttributedState 3 3 stAtVarC3) @?= Just (OriginInherited "Ephedra distachya")
+
+      -- Sobrescribir explícitamente (3, 3) con estado '1'
+      let stOverridden = stepTUIEvents stAtVarC3 [keyChar 'i', keyChar '1', keyEnter]
+      cellAttrAndText 3 3 stOverridden @?= (attrCellValid, "1")
+      fmap asOrigin (lookupCellAttributedState 3 3 stOverridden) @?= Just OriginExplicit
+
+      -- Pulsar 'x' elimina la sobrescritura explícita y restaura el estado heredado "2"
+      let stRestored = stepTUIEvent stOverridden (keyChar 'x')
+      cellAttrAndText 3 3 stRestored @?= (attrCellImplicit, "2")
+      fmap asOrigin (lookupCellAttributedState 3 3 stRestored) @?= Just (OriginInherited "Ephedra distachya")
+
+      -- Mover a (3, 2), introducir '1' (disparando TAX-DEP-002) y restaurar con tecla Del
+      let stViolated = stepTUIEvents stRestored [keyChar 'h', keyChar 'i', keyChar '1', keyEnter]
+      fst (cellAttrAndText 3 2 stViolated) @?= attrCellError
+      let stClearedDel = stepTUIEvent stViolated (Vty.EvKey Vty.KDel [])
+      cellAttrAndText 3 2 stClearedDel @?= (attrCellInapplicable, "-")
   ]
 
