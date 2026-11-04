@@ -37,6 +37,7 @@ import Taxide.TUI.Draw (cellAttrAndText)
 import Taxide.TUI.Runner
   ( applyTerminalResize
   , initAppState
+  , scratchDataset
   , stepTUIEvent
   , stepTUIEvents
   , stepTUIMouse
@@ -366,5 +367,12 @@ main = defaultMain $ testGroup "TAXIDE TUI Headless Verification Suite (Fase 5)"
       fst (cellAttrAndText 3 2 stViolated) @?= attrCellError
       let stClearedDel = stepTUIEvent stViolated (Vty.EvKey Vty.KDel [])
       cellAttrAndText 3 2 stClearedDel @?= (attrCellInapplicable, "-")
+
+  , testCase "9. Inicialización de espacio de trabajo en blanco con scratchDataset" $ do
+      let st0 = initAppState "." scratchDataset
+      length (asResolvedTaxa st0) @?= 1
+      specNumCharacters (dsSpecs (asDataset st0)) @?= 3
+      let stWithTaxon = stepTUIEvents st0 ([keyChar ':'] ++ typeTextEvents "add Nueva_especie_B" ++ [keyEnter])
+      length (asResolvedTaxa stWithTaxon) @?= 2
   ]
 

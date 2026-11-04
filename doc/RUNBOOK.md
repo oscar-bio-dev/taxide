@@ -154,20 +154,25 @@ ghcid -c "cabal repl taxide-delta" -T "Main.main"
 
 ## 4. Manual de Operaciones y Flujos de Trabajo CLI
 
-### 4.1 Normalización y Validación Canónica con `taxide-fmt`
+> **Nota sobre el ejecutable unificado:** En la versión v1.0.0, todas las operaciones pueden ejecutarse directamente a través del comando maestro `taxide <subcomando>` (por ejemplo, `taxide fmt`, `taxide lint`, `taxide tree`), sin necesidad de invocar ejecutables individuales.
 
-El ejecutable `taxide-fmt` ingesta los tres archivos cardinales de DELTA (`SPECS`, `CHARS`, `ITEMS`), valida la integridad léxica y estructural, y genera versiones canónicas limpias respetando reglas estrictas de sangrado y terminación.
+### 4.1 Formateador y Normalizador Canónico (`taxide fmt` / `taxide-fmt`)
+
+> **¿Qué significa `fmt`?** `fmt` es la abreviatura universal de **«formatter»** (formateador de código o texto, similar a *Prettier*, *gofmt* o *rustfmt*).
+> En sistemática biológica, las descripciones DELTA (`SPECS`, `CHARS`, `ITEMS`) suelen tener décadas de antigüedad y a menudo presentan espacios irregulares o líneas desalineadas.
+> `taxide fmt` ingesta los tres archivos, valida su integridad léxica y estructural, y genera versiones canónicas limpias y perfectamente alineadas sin alterar los datos biológicos.
 
 ```bash
 # Ver ayuda y parámetros disponibles
-cabal run taxide-fmt -- --help
+taxide fmt --help
+# o con cabal: cabal run taxide -- fmt --help
 ```
 
 #### Parámetros Aceptados
 
 | Bandera | Argumento | Valor por Defecto | Descripción |
 |---|---|---|---|
-| `-i`, `--input-dir` | `DIR` | `.` (Directorio actual) | Ruta al directorio que contiene los archivos `SPECS`, `CHARS` e `ITEMS`. |
+| `-d`, `-i`, `--dataset`, `--input-dir` | `DIR` | `.` (Directorio actual) | Ruta al directorio que contiene los archivos `SPECS`, `CHARS` e `ITEMS`. |
 | `-o`, `--output-dir` | `OUTDIR` | Ninguno (Opcional) | Ruta al directorio donde se guardarán los archivos reformateados canónicamente. |
 | `-c`, `--check` | Ninguno | `False` | Modo auditoría/verificación: solo analiza sintaxis y reporta errores sin escribir archivos en disco. |
 
@@ -175,13 +180,13 @@ cabal run taxide-fmt -- --help
 
 **Caso A: Validación en Pipelines de CI/CD (Modo `--check`)**
 ```bash
-cabal run taxide-fmt -- -i examples/craspedacusta --check
+taxide fmt -d examples/craspedacusta --check
 ```
 *Salida esperada:* Retorna código de salida `0` si el dataset es válido, o código `1` con el detalle del error sintáctico.
 
 **Caso B: Limpieza y Reemisión Canónica de un Dataset Histórico**
 ```bash
-cabal run taxide-fmt -- -i ./legacy_dataset -o ./canonical_dataset
+taxide fmt -d ./legacy_dataset -o ./canonical_dataset
 ```
 *Efecto:* Genera en `./canonical_dataset/` los archivos `SPECS`, `CHARS` e `ITEMS` formateados de acuerdo con la norma TAXIDE, eliminando ambigüedades en `/` y preservando comentarios `<...>`.
 

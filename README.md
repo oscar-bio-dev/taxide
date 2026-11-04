@@ -72,83 +72,89 @@ flowchart TD
 | [`taxide-engine`](taxide-engine) | Inferencia lógica en memoria: herencia de variantes (`#+`), DAG reactivo, Fitch, Sankoff, Gower y Claves. | `vector-algorithms`, `parallel`, `primitive` |
 | [`taxide-export`](taxide-export) | Transpilador cross-target hacia NEXUS, TNT, Darwin Core Archive (DwC-A / GBIF), JSON, Markdown/HTML y HDF5. | `aeson`, `zip-archive`, `xml-conduit`, `prettyprinter` |
 | [`taxide-tui`](taxide-tui) | Interfaz gráfica interactiva de terminal en 24 bits con edición de hojas de cálculo y linter en vivo. | `brick >= 2.3`, `vty`, `microlens` |
-| [`taxide-app`](taxide-app) | Punto de entrada del ejecutable CLI (`taxide`). | `optparse-applicative` |
+| [`taxide-app`](taxide-app) | Punto de entrada del ejecutable CLI maestro (`taxide`). | `optparse-applicative` |
 | [`doc`](doc) | Manifiesto fundacional, especificación matemática (`.tex`), Runbook operativo (`RUNBOOK.md`) y compilador (`pdfltex.hs`). | LaTeX / Docker TeXLive |
 
 ---
 
-## ⚡ Quick Start (Inicio Rápido en 3 Minutos)
+## ⚡ Quick Start (Inicio Rápido para Humanos en 60 Segundos)
 
-¿Listo para tratar la taxonomía como código? Sigue estos pasos para compilar TAXIDE, verificar las invariantes biológicas y procesar un dataset de ejemplo:
+TAXIDE está diseñado para que cualquier taxónomo, biólogo o investigador pueda abrir, editar y analizar sus matrices de especies de inmediato, sin lidiar con programas obsoletos de MS-DOS ni configuraciones complejas.
 
-### 1. Clonar y Compilar
+> ### 💡 ¿Qué es `fmt` y por qué existía `taxide-fmt`?
+> * **¿Qué significa `fmt`?** Es la abreviatura estándar en informática de **«formatter»** (formateador de texto o código, equivalente a lo que hace *Prettier*, *gofmt* o *rustfmt*).
+> * **¿Para qué sirve?** En taxonomía, los archivos de texto DELTA (`SPECS`, `CHARS`, `ITEMS`) a menudo fueron escritos a mano hace décadas, con sangrías irregulares o comentarios desalineados. El comando `taxide fmt` lee esos archivos y los reescribe de forma limpia, alineada y uniforme (formato canónico) sin tocar los datos biológicos, o verifica si contienen errores de sintaxis con `--check`.
+> * **¿Por qué existía `taxide-fmt`?** Durante las primeras fases de desarrollo cada módulo tenía su propia herramienta (`taxide-fmt`, `taxide-lint`, `taxide-tree`, etc.). **En la versión actual v1.0.0 todo está unificado en un solo comando maestro:** `taxide`. Ya no necesitas recordar nombres raros.
+
+---
+
+### Paso 1: Clonar y Compilar
+
 ```bash
-# Clonar y compilar todos los paquetes del espacio de trabajo
 git clone https://github.com/ecotech/taxide.git
 cd taxide
 cabal update
 cabal build all
 ```
 
-### 2. Validar y Normalizar un Dataset DELTA con `taxide-fmt`
-```bash
-# Validar la sintaxis de un dataset (Modo auditoría / CI)
-cabal run taxide-fmt -- -i examples/craspedacusta --check
+> **Nota:** Al ser un proyecto multi-paquete, Cabal requiere la palabra `all` (`cabal build all`). También puedes saltarte este paso y ejecutar directamente `cabal run taxide -- -d examples/craspedacusta` (Cabal compilará automáticamente lo necesario).
 
-# Reformatear canónicamente el dataset sin pérdida semántica
-cabal run taxide-fmt -- -i examples/craspedacusta -o ./craspedacusta_canonical
+---
+
+### Paso 2: ¡Arrancar la Interfaz Visual (TUI)!
+
+Para abrir el dataset de ejemplo (*Craspedacusta*, medusas de agua dulce) en la interfaz interactiva de terminal, simplemente ejecuta:
+
+```bash
+cabal run taxide -- -d examples/craspedacusta
 ```
 
-### 3. Auditar Invariantes Biológicas e Inferir Estados con `taxide-lint`
+*(Si instalaste el binario en tu sistema, basta con teclear: `taxide -d examples/craspedacusta`)*
+
+¡Y listo! Aparecerá la matriz completa en tu terminal con colores semánticos:
+* **Ratón:** Haz clic en cualquier celda para seleccionarla; haz doble clic o clic derecho para editar su valor; haz clic en las pestañas superiores para cambiar de vista.
+* **Teclado:** Muévete con las flechas o `hjkl`; pulsa `i` o `Enter` para editar; pulsa `o` para agregar una nueva especie; pulsa `-` para marcar como inaplicable.
+* **Ayuda en pantalla:** Pulsa `?` o `F1` en cualquier momento para ver la guía interactiva.
+* **Cambio de tema:** Escribe `:theme nord`, `:theme dracula`, `:theme catppuccin` o `:theme gruvbox`.
+* **Salir:** Escribe `:q` (o `:wq` para guardar cambios).
+
+---
+
+### Paso 3: Catálogo Rápido de Herramientas de `taxide`
+
+Además de la interfaz visual interactiva, el comando maestro `taxide` incluye herramientas de terminal para procesar datos por lotes o en flujos automáticos:
+
+| Comando | Nombre Humano | ¿Para qué sirve? |
+|---|---|---|
+| **`taxide`** o **`taxide tui`** | **Interfaz Gráfica (TUI)** | Abre la matriz interactiva tipo hoja de cálculo con ratón, linter en vivo y visores integrados. |
+| **`taxide fmt`** | **Formateador (*Formatter*)** | Limpia, alinea y valida la sintaxis de archivos DELTA (`SPECS`, `CHARS`, `ITEMS`). |
+| **`taxide lint`** | **Auditor (*Linter*)** | Detecta inconsistencias biológicas (ej. estados activos en caracteres inaplicables o cotas invertidas). |
+| **`taxide tree`** | **Árboles Filogenéticos** | Infiere árboles evolutivos por máxima parsimonia (Fitch/Sankoff) o distancias fenéticas (UPGMA, Neighbor-Joining). |
+| **`taxide key`** | **Claves Dicotómicas** | Construye claves dicotómicas paso a paso optimizadas por teoría de la información (Entropía de Shannon). |
+| **`taxide compile`** | **Exportador Universal** | Convierte tus datos a NEXUS, TNT, Darwin Core Archive (GBIF), GeoJSON, monografías en HTML/Markdown o tensores binarios. |
+
+---
+
+### Ejemplos de 1 Línea con el Comando Maestro `taxide`
+
 ```bash
-# Ejecutar pipeline de inferencia semántica y ver métricas SoA en memoria
-cabal run taxide-lint -- -i examples/craspedacusta -v
+# 1. Comprobar si un dataset tiene errores de sintaxis (Formatter en modo --check)
+cabal run taxide -- fmt -d examples/craspedacusta --check
 
-# Exportar diagnósticos ontológicos en formato JSON estructurado
-cabal run taxide-lint -- -i examples/craspedacusta --json
-```
+# 2. Auditar inconsistencias biológicas con el Linter
+cabal run taxide -- lint -d examples/craspedacusta
 
-### 4. Compilar a Formatos Cladísticos, Prosa, Darwin Core Archive, JSON y Binario HPC con `taxide-compile`
-```bash
-# Matriz NEXUS / TNT (los caracteres IN/RN se discretizan a OM: --discretize sqrt|sturges|N)
-cabal run taxide-compile -- -i examples/craspedacusta -t nexus -o craspedacusta.nex
-cabal run taxide-compile -- -i examples/craspedacusta -t tnt   -o craspedacusta.tnt
+# 3. Construir un árbol filogenético por máxima parsimonia (Wagner + SPR)
+cabal run taxide -- tree -d examples/craspedacusta --method parsimony --search spr
 
-# Descripciones en lenguaje natural (Markdown o HTML5; --lang en|es, --omit-implicit, --no-units...)
-cabal run taxide-compile -- -i examples/craspedacusta -t natural --format html -o craspedacusta.html
+# 4. Generar una clave dicotómica de identificación en español
+cabal run taxide -- key -d examples/craspedacusta --lang es
 
-# Darwin Core Archive determinista (taxon, measurementorfact, description, meta.xml, eml.xml)
-cabal run taxide-compile -- -i examples/craspedacusta -t dwca -o craspedacusta.zip \
-  --title "Craspedacusta" --creator "Autor Apellido" --license CC-BY-4.0
+# 5. Exportar a formato estándar NEXUS (para PAUP* o MrBayes)
+cabal run taxide -- compile -d examples/craspedacusta -t nexus -o craspedacusta.nex
 
-# JSON/GeoJSON (PostGIS) y tensor binario columnar alineado a 64 bytes
-cabal run taxide-compile -- -i examples/craspedacusta -t json -o craspedacusta.json
-cabal run taxide-compile -- -i examples/craspedacusta -t hdf5 -o craspedacusta.hpc
-```
-
-### 5. Reconstruir Cladogramas, Fenogramas y Claves Dicotómicas con `taxide-tree` y `taxide-key`
-```bash
-# Inferencia de máxima parsimonia (Fitch + Sankoff/Wagner) con búsqueda heurística SPR/TBR
-cabal run taxide-tree -- -i examples/craspedacusta --method parsimony --search spr --format report
-
-# Reconstrucción fenética sobre matriz de Gower mediante UPGMA o Neighbor-Joining (NJ)
-cabal run taxide-tree -- -i examples/craspedacusta --method nj --format newick -o craspedacusta.nwk
-
-# Generación de clave dicotómica óptima por entropía de Shannon (bracketed, indented o md)
-cabal run taxide-key -- -i examples/craspedacusta --format bracketed --lang es
-cabal run taxide-key -- -i examples/craspedacusta --format md --lang es -o clave_craspedacusta.md
-```
-
-### 6. Ejecutar las Pruebas Formales y de Propiedades
-```bash
-# Correr pruebas unitarias (invariantes biológicas) y pruebas basadas en propiedades (Hedgehog)
-cabal test all --test-show-details=streaming
-```
-
-### 7. Compilar la Especificación Formal a PDF
-```bash
-# Compilar el manifiesto matemático (detección automática: pdflatex nativo o contenedor Docker)
-runhaskell doc/pdfltex.hs doc/taxide.tex
+# 6. Exportar a Darwin Core Archive (para publicar en GBIF)
+cabal run taxide -- compile -d examples/craspedacusta -t dwca -o craspedacusta_dwca.zip
 ```
 
 > 📖 **¿Buscas operaciones avanzadas, atajos de la TUI, flujos CI/CD o resolución de incidencias?**
@@ -322,7 +328,7 @@ cabal test all --test-show-details=streaming
 TAXIDE ofrece un conjunto intuitivo de subcomandos para operar en terminal o en pipelines de CI/CD:
 
 ```bash
-# Iniciar el entorno interactivo TUI (Gruvbox Dark)
+# Iniciar el entorno interactivo TUI
 taxide tui --dataset=./craspedacusta/
 
 # Validar y diagnosticar una colección DELTA (Linter taxonómico)
@@ -340,11 +346,11 @@ taxide compile --specs=SPECS --chars=CHARS --items=ITEMS --target=dwca  -o crasp
 taxide describe --items=ITEMS -o flora_descriptions.md
 
 # Búsqueda de cladogramas de máxima parsimonia (Wagner, SPR, TBR) y fenogramas (UPGMA, NJ)
-cabal run taxide-tree -- -i examples/craspedacusta --method parsimony --search spr --format report
-cabal run taxide-tree -- -i examples/craspedacusta --method nj --format newick -o best_tree.nwk
+taxide tree -d ./craspedacusta/ --method parsimony --search spr --format report
+taxide tree -d ./craspedacusta/ --method nj --format newick -o best_tree.nwk
 
 # Generar clave dicotómica de identificación basada en ganancia de información de Shannon
-cabal run taxide-key -- -i examples/craspedacusta --format bracketed --lang es -o identification_key.txt
+taxide key -d ./craspedacusta/ --format bracketed --lang es -o identification_key.txt
 ```
 
 ---

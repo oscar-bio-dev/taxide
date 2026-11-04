@@ -196,7 +196,7 @@ data KeyOpts = KeyOpts
 inputPathsParser :: Parser InputPaths
 inputPathsParser = InputPaths
   <$> strOption
-        ( long "input-dir" <> long "dataset" <> short 'i' <> metavar "DIR"
+        ( long "input-dir" <> long "dataset" <> short 'i' <> short 'd' <> metavar "DIR"
        <> value "." <> showDefault
        <> help "Directorio con los archivos SPECS, CHARS e ITEMS" )
   <*> optional (strOption (long "specs" <> short 's' <> metavar "FILE" <> help "Ruta específica a SPECS"))
@@ -205,10 +205,13 @@ inputPathsParser = InputPaths
 
 tuiOptsParser :: Parser TuiOpts
 tuiOptsParser = TuiOpts
-  <$> strOption
-        ( long "dataset" <> long "input-dir" <> short 'i' <> metavar "DIR"
-       <> value "." <> showDefault
-       <> help "Directorio del dataset DELTA para abrir en la TUI" )
+  <$> ( strOption
+          ( long "dataset" <> long "input-dir" <> short 'd' <> short 'i' <> metavar "DIR"
+         <> help "Directorio del dataset DELTA para abrir en la TUI" )
+    <|> argument str
+          ( metavar "[DIR]" <> value "."
+         <> help "Directorio opcional del dataset DELTA (por defecto: .)" )
+      )
   <*> optional (strOption (long "specs" <> short 's' <> metavar "FILE" <> help "Ruta específica a SPECS"))
   <*> optional (strOption (long "chars" <> short 'c' <> metavar "FILE" <> help "Ruta específica a CHARS"))
   <*> optional (strOption (long "items" <> short 'm' <> metavar "FILE" <> help "Ruta específica a ITEMS"))
@@ -407,6 +410,7 @@ commandParser = hsubparser
       (info (CmdKey <$> keyOptsParser)
         (progDesc "Generador de claves dicotómicas óptimas mediante Entropía de Shannon"))
   )
+ <|> (CmdTUI <$> tuiOptsParser)
 
 -- | Resuelve las rutas de los tres archivos cardinales DELTA (permitiendo también que
 -- si se pasa sólo @--items=ruta/ITEMS@, el directorio padre suministre @SPECS@ y @CHARS@).
