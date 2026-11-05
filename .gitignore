@@ -128,3 +128,14 @@ doc/taxide-delta-tests.txt
 doc/taxide-core-properties.txt
 benchmarks/*.html
 benchmarks/*.csv
+
+# ------------------------------------------------------------------------------
+# 9. Local User Workspaces, Datasets & Scratch Directories
+# ------------------------------------------------------------------------------
+workspace/
+workspaces/
+local_data/
+user_data/
+scratch/
+projects/
+*.local/
