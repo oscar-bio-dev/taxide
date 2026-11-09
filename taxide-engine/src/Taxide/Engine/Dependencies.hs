@@ -213,8 +213,18 @@ propagateTaxonRules rules taxon =
               let newAttrs = Map.insert depId inappAttr currentAttrs
               in (currTaxon { rtAttributes = newAttrs }, diags)
 
-            _ ->
-              -- Declarado explícitamente o heredado
+            OriginInherited _ ->
+              -- Era un valor heredado del progenitor primario (#). Al haber sobrescrito el
+              -- variante (#+) el carácter controlador a un estado inhabilitante, el dependiente
+              -- heredado se neutraliza automáticamente a Inapplicable sin emitir contradicción.
+              let newAttrs = Map.insert depId inappAttr currentAttrs
+              in (currTaxon { rtAttributes = newAttrs }, diags)
+
+            OriginInapplicableDependency _ ->
+              (currTaxon, diags)
+
+            OriginExplicit ->
+              -- Declarado explícitamente por el propio taxón
               case raw of
                 AttrStates _ (PseudoState Inapplicable _) ->
                   -- Ya estaba marcado explícitamente como '-': coherente

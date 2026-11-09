@@ -267,6 +267,28 @@ testVariantsInheritance = testGroup "Herencia Monoidal de Variantes (#+)"
           varErrors = filter (\d -> diagCode d == "TAX-VAR-001") diags
 
       length varErrors @?= 1
+
+  , testCase "Variante (#+) que sobrescribe controlador a estado inhabilitante neutraliza dependiente heredado sin TAX-DEP-002" $ do
+      let specs = emptySpecs
+            { specNumCharacters = 3
+            , specDependencies = [DependentRule 1 (Set.singleton 2) [2]]
+            }
+          parent = mkPrimaryItem "Parent"
+            [ (1, mkState 1)
+            , (2, mkState 1)
+            ]
+          variant = mkVariantItem "Variant"
+            [ (1, mkState 2)
+            ]
+          (taxa, _, diags) = runPipelinePure specs [parent, variant]
+          depErrors = filter (\d -> diagCode d == "TAX-DEP-002") diags
+
+      depErrors @?= []
+      length taxa @?= 2
+      let v = taxa !! 1
+      case Map.lookup 2 (rtAttributes v) of
+        Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) (OriginInapplicableDependency 1)) -> pure ()
+        other -> assertFailure ("Se esperaba carácter 2 como Inapplicable por dependencia, pero se obtuvo: " ++ show other)
   ]
 
 --------------------------------------------------------------------------------
