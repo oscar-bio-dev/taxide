@@ -43,17 +43,17 @@ renderCharTypes m
   | otherwise =
       let sorted = sortOn fst (Map.toList m)
           grouped = groupBy (\(_, t1) (_, t2) -> t1 == t2) sorted
-          chunks = map formatGroup grouped
+          chunks = concatMap formatGroup grouped
       in [ "*CHARACTER TYPES"
          , "  " <> T.unwords chunks
          , ""
          ]
   where
-    formatGroup [] = ""
+    formatGroup [] = []
     formatGroup entries@((_, ctype):_) =
       let ids = map fst entries
-          rangeStr = formatIdRanges ids
-      in rangeStr <> "," <> T.pack (show ctype)
+          valStr = T.pack (show ctype)
+      in [formatRun r <> "," <> valStr | r <- buildRuns ids]
 
 renderNumbersOfStates :: Map.Map Int Int -> [Text]
 renderNumbersOfStates m
@@ -61,17 +61,17 @@ renderNumbersOfStates m
   | otherwise =
       let sorted = sortOn fst (Map.toList m)
           grouped = groupBy (\(_, n1) (_, n2) -> n1 == n2) sorted
-          chunks = map formatGroup grouped
+          chunks = concatMap formatGroup grouped
       in [ "*NUMBERS OF STATES"
          , "  " <> T.unwords chunks
          , ""
          ]
   where
-    formatGroup [] = ""
+    formatGroup [] = []
     formatGroup entries@((_, n):_) =
       let ids = map fst entries
-          rangeStr = formatIdRanges ids
-      in rangeStr <> "," <> T.pack (show n)
+          valStr = T.pack (show n)
+      in [formatRun r <> "," <> valStr | r <- buildRuns ids]
 
 renderDependencies :: [DependentRule] -> [Text]
 renderDependencies [] = []
@@ -83,7 +83,7 @@ renderDependencies rules =
     formatDepRule r =
       let c = T.pack (show (depControllerChar r))
           sList = T.intercalate "/" (map (T.pack . show) (Set.toList (depDisablingStates r)))
-          dList = formatIdRanges (depDependentChars r)
+          dList = T.intercalate ":" (map formatRun (buildRuns (depDependentChars r)))
       in c <> "," <> sList <> ":" <> dList
 
 renderImplicitValues :: [ImplicitRule] -> [Text]
@@ -102,18 +102,18 @@ renderImplicitValues rules =
             Nothing -> ""
       in c <> "," <> s <> unspec
 
--- | Agrupa listas de enteros consecutivos en notación de rangos: [1,2,3,5] -> "1-3 5".
-formatIdRanges :: [Int] -> Text
-formatIdRanges [] = ""
-formatIdRanges xs =
-  let runs = foldr step [] xs
-  in T.intercalate " " (map formatRun runs)
+-- | Agrupa enteros consecutivos en pares (inicio, fin): [1,2,3,5,8] -> [(1,3), (5,5), (8,8)].
+buildRuns :: [Int] -> [(Int, Int)]
+buildRuns [] = []
+buildRuns xs = foldr step [] xs
   where
     step x [] = [(x, x)]
     step x ((a, b) : rest)
       | x + 1 == a = (x, b) : rest
       | otherwise  = (x, x) : (a, b) : rest
 
-    formatRun (a, b)
-      | a == b    = T.pack (show a)
-      | otherwise = T.pack (show a) <> "-" <> T.pack (show b)
+-- | Formatea un rango de enteros a Text: (1, 3) -> "1-3", (5, 5) -> "5".
+formatRun :: (Int, Int) -> Text
+formatRun (a, b)
+  | a == b    = T.pack (show a)
+  | otherwise = T.pack (show a) <> "-" <> T.pack (show b)

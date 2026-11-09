@@ -84,6 +84,24 @@ unitTests = testGroup "Unit & Golden Tests"
           specCharTypes parsed @?= specCharTypes specs
           specDependencies parsed @?= specDependencies specs
 
+  , testCase "Non-consecutive numbers of states and dependencies round-trip exactly" $ do
+      let specs = SpecsDef
+            { specNumCharacters   = 12
+            , specMaxNumberStates = 5
+            , specMaxNumberItems  = 10
+            , specCharTypes       = Map.fromList
+                [ (1, UM), (2, UM), (3, UM), (4, UM), (5, UM)
+                , (6, IN), (7, RN), (8, UM), (9, TE), (10, TE), (11, IN), (12, UM)
+                ]
+            , specNumbersOfStates = Map.fromList
+                [(1, 2), (2, 5), (3, 3), (4, 3), (5, 2), (8, 3), (12, 3)]
+            , specDependencies    =
+                [ DependentRule 8 (Set.singleton 3) [9, 10, 12] ]
+            , specImplicitValues  = []
+            }
+          rendered = renderSpecs specs
+      parseSpecsText "" rendered @?= Right specs
+
   , testCase "CHARS definitions round-trip" $ do
       let chars =
             [ CharacterDef 1 UM (Just "habit") "plant habit" Nothing
