@@ -19,6 +19,8 @@ Implementa la función de proyección visual declarativa sobre 'Brick.Widget', r
 module Taxide.TUI.Draw
   ( drawTUI
   , cellAttrAndText
+  , formatAccessibleCellText
+  , truncateEllipsis
   , renderOriginLabel
   ) where
 
@@ -78,7 +80,7 @@ drawTUI st =
         ModeEdit buf -> drawEditModal st buf : [baseLayer]
         _            -> [baseLayer]
   in if asShowHelp st
-       then drawHelpModal : withEdit
+       then drawHelpModal st : withEdit
        else withEdit
 
 -- | Barra superior de pestañas clicables e indicadores globales del dataset.
@@ -183,11 +185,19 @@ drawVirtualizedGrid st =
   where
     formatCharHeader colW cid =
       case Map.lookup cid (asCharMap st) of
-        Nothing -> T.take (colW - 1) (" C" <> T.pack (show cid))
+        Nothing -> truncateEllipsis (colW - 1) (" C" <> T.pack (show cid))
         Just cd ->
           let base = " C" <> T.pack (show cid) <> ":" <> T.pack (show (charType cd))
               feat = if colW >= 16 then " " <> charFeature cd else ""
-          in T.take (colW - 1) (base <> feat)
+          in truncateEllipsis (colW - 1) (base <> feat)
+
+-- | Trunca una cadena de texto a lo sumo @maxLen@ caracteres añadiendo elipsis Unicode @…@ si excede el ancho.
+truncateEllipsis :: Int -> Text -> Text
+truncateEllipsis maxLen txtStr
+  | maxLen <= 0               = ""
+  | T.length txtStr <= maxLen = txtStr
+  | maxLen == 1               = "…"
+  | otherwise                 = T.take (maxLen - 1) txtStr <> "…"
 
 -- | Renderiza una única fila visible dentro del viewport con soporte de clic por celda.
 drawGridRow :: AppState -> Int -> Int -> [Int] -> Int -> Widget ResourceName
@@ -205,7 +215,7 @@ drawGridRow st tColW cColW visibleCols rowIdx =
       taxonCell =
         clickable (ClickTaxonRow rowIdx) $
           hLimit tColW $ withAttr tAttr $
-            padRight Max (txt (T.take (tColW - 1) taxonLabel))
+            padRight Max (txt (truncateEllipsis (tColW - 1) taxonLabel))
       valueCells =
         [ drawGridCell st cColW rowIdx cid
         | cid <- visibleCols
@@ -213,37 +223,57 @@ drawGridRow st tColW cColW visibleCols rowIdx =
       rowHighlightAttr = if isCurRow then attrTaxonActive else attrBase
   in hBox (taxonCell : valueCells ++ [withAttr rowHighlightAttr (padRight Max (txt " "))])
 
--- | Renderiza una celda individual $(r, c)$ clicable con su atributo cromático Gruvbox Dark.
+-- | Renderiza una celda individual $(r, c)$ clicable con su atributo cromático e indicadores accesibles.
 drawGridCell :: AppState -> Int -> Int -> Int -> Widget ResourceName
 drawGridCell st cColW rowIdx cid =
   let isCursor = rowIdx == asCursorRow st && cid == asCursorCol st
       (semanticAttr, cellText) = cellAttrAndText rowIdx cid st
       finalAttr = if isCursor then attrCursor else semanticAttr
-      enrichedText = enrichCellDisplay cColW cid cellText st
+      accessibleText = formatAccessibleCellText rowIdx cid cellText st
+      enrichedText = enrichCellDisplay cColW cid accessibleText cellText st
       formatted =
         if isCursor
-          then "[" <> T.take (cColW - 3) enrichedText <> "]"
-          else " " <> T.take (cColW - 2) enrichedText
+          then "[" <> truncateEllipsis (cColW - 3) enrichedText <> "]"
+          else " " <> truncateEllipsis (cColW - 2) enrichedText
   in clickable (ClickCell rowIdx cid) $
        hLimit cColW $ withAttr finalAttr $ padRight Max (txt formatted)
 
+-- | Añade glifos no cromáticos para accesibilidad visual (deuteranopía/protanopía):
+-- prefijo @·@ para valores implícitos/heredados, sufijo @!@ para errores y @?@ para advertencias.
+formatAccessibleCellText :: Int -> Int -> Text -> AppState -> Text
+formatAccessibleCellText rowIdx cid baseTxt st =
+  let cellDiags = lookupCellDiagnostics rowIdx cid st
+      hasError  = any (\d -> diagSeverity d == SeverityError) cellDiags
+      hasWarn   = any (\d -> diagSeverity d == SeverityWarning) cellDiags
+      mAttrSt   = lookupCellAttributedState rowIdx cid st
+      originPrefix = case mAttrSt of
+        Just (AttributedState _ (OriginImplicitOmitted _))     -> "·"
+        Just (AttributedState _ (OriginImplicitUnspecified _)) -> "·"
+        Just (AttributedState _ (OriginInherited _))           -> "·"
+        _                                                      -> ""
+      diagSuffix
+        | hasError  = "!"
+        | hasWarn   = "?"
+        | otherwise = ""
+  in originPrefix <> baseTxt <> diagSuffix
+
 -- | Cuando la columna responsiva es suficientemente ancha ($\ge 16$ caracteres),
 -- muestra también el nombre del estado o las unidades junto al código numérico.
-enrichCellDisplay :: Int -> Int -> Text -> AppState -> Text
-enrichCellDisplay cColW cid baseTxt st
-  | cColW < 16 = baseTxt
+enrichCellDisplay :: Int -> Int -> Text -> Text -> AppState -> Text
+enrichCellDisplay cColW cid displayTxt rawBaseTxt st
+  | cColW < 16 = displayTxt
   | otherwise =
       case Map.lookup cid (asCharMap st) of
-        Nothing -> baseTxt
+        Nothing -> displayTxt
         Just cd ->
-          case reads (T.unpack baseTxt) :: [(Int, String)] of
+          case reads (T.unpack rawBaseTxt) :: [(Int, String)] of
             [(sid, "")] ->
               case lookup (fromIntegral sid) (charStates cd) of
-                Just sName -> baseTxt <> ":" <> sName
-                Nothing    -> baseTxt
+                Just sName -> displayTxt <> ":" <> sName
+                Nothing    -> displayTxt
             _ -> case charUnits cd of
-              Just u | baseTxt /= "-" && baseTxt /= "U" -> baseTxt <> " " <> u
-              _ -> baseTxt
+              Just u | rawBaseTxt /= "-" && rawBaseTxt /= "U" -> displayTxt <> " " <> u
+              _ -> displayTxt
 
 -- | Función pura que determina el atributo cromático Gruvbox Dark y el texto resumido
 -- de la celda $(r, c)$ según su estado algebraico $(\tau_{rc}, \beta_{rc})$, su origen
@@ -309,7 +339,7 @@ drawInspectorPanel st =
       diagWidget = case cellDiags of
         [] ->
           withAttr attrCellValid $
-            padRight Max (txt " [✓] Sin violaciones ontológicas en esta celda. (Teclas rápidas: '-' Inaplicable | 'u' Desconocido | 'x'/Del Restaurar | 'i' Editar)")
+            padRight Max (txt " [✓] Sin violaciones ontológicas en esta celda. ('e'/Enter:Editar | 'i':Nuevo | 'u':Deshacer | 'U':Desc. | '-':Inap. | 'x':Restaurar)")
         (d : _) ->
           let dAttr = case diagSeverity d of
                 SeverityError   -> attrCellError
@@ -376,7 +406,7 @@ renderOriginLabel orig = case orig of
     "Inaplicable por DAG (*DEPENDENT CHARACTERS controlador #" <> T.pack (show ctrl) <> ")"
 
 -- | Vista dedicada al Inspector de Diagnósticos Linter ($\nu = \textsc{Linter}$),
--- con filas clicables para saltar directamente a la celda infractora y soporte de scroll vertical.
+-- con selector por teclado ('asLinterCursor', @j@/@k@/@Enter@), filas clicables y scroll vertical.
 drawLinterView :: AppState -> Widget ResourceName
 drawLinterView st =
   let diags = asDiagnostics st
@@ -386,24 +416,27 @@ drawLinterView st =
       rows = if null diags
         then [withAttr attrCellValid (padRight Max (txt " [✓] 0 violaciones detectadas en la matriz morfológica."))]
         else
-          [ let attr = case diagSeverity d of
+          [ let isSel = idx == asLinterCursor st
+                sevAttr = case diagSeverity d of
                   SeverityError   -> attrCellError
                   SeverityWarning -> attrCellWarning
                   SeverityInfo    -> attrCellImplicit
+                attr = if isSel then attrCursor else sevAttr
+                selPrefix = if isSel then " ▶ " else "   "
                 loc = diagLocation d
                 mJump = do
                   tName <- locTaxon loc
                   rIdx  <- findTaxonRow tName
                   let cIdx = maybe 1 id (locCharId loc)
                   pure (rIdx, cIdx)
-                lineW = withAttr attr (padRight Max (txt (" " <> renderDiagnosticTerminal d <> "  [Click para ir a celda]")))
+                lineW = withAttr attr (padRight Max (txt (selPrefix <> renderDiagnosticTerminal d <> "  [Enter / Click: ir a celda]")))
             in case mJump of
                  Just (rIdx, cIdx) -> clickable (ClickDiagJump rIdx cIdx) lineW
                  Nothing           -> lineW
-          | d <- diags
+          | (idx, d) <- zip [0 ..] diags
           ]
   in withBorderStyle unicodeRounded $
-       borderWithLabel (withAttr attrHeader (txt " Auditoría Completa del Linter Ontológico y Cladístico (Click diagnóstico para saltar | j/k/Rueda: Scroll) ")) $
+       borderWithLabel (withAttr attrHeader (txt " Auditoría Completa del Linter Ontológico y Cladístico (j/k: Seleccionar | Enter/Click: Ir a celda) ")) $
          clickable LinterViewport $
            viewport LinterViewport Vertical (vBox rows)
 
@@ -458,8 +491,9 @@ drawEditModal st buf =
                   withAttr attrButton (txt (" [" <> T.pack (show sid) <> ":" <> T.take 12 sName <> "] "))
               | (sid, sName) <- take 4 (charStates cd)
               ]
+      modalW = min 78 (max 44 (asTermWidth st - 4))
   in centerLayer $
-       hLimit 76 $
+       hLimit modalW $
          withBorderStyle unicodeRounded $
            borderWithLabel (withAttr attrModalBorder (txt " Editor Reactivo de Atributo DELTA ")) $
              padLeftRight 2 $ vBox
@@ -471,7 +505,7 @@ drawEditModal st buf =
                    , withAttr attrCursor (txt (buf <> "█"))
                    ]
                , modalStateButtons
-               , txt "Sintaxis: 1 | 1/2 (OR) | 1&2 (AND) | 1-3 | - (Inaplicable) | U | (5-)10-15(-20)"
+               , txt "Sintaxis: 1 | 1/2 (OR) | 1&2 (AND) | 1-3 | - (Inap.) | U | (5-)10-15(-20) | Ctrl+u:Limpiar"
                , hBorder
                , hBox
                    [ clickable ClickModalConfirm (withAttr attrButtonActive (txt " [ ✓ Confirmar (Enter) ] "))
@@ -480,44 +514,45 @@ drawEditModal st buf =
                    ]
                ]
 
--- | Ventana modal de ayuda interactiva (@?@ o botón @[? Ayuda]@).
-drawHelpModal :: Widget ResourceName
-drawHelpModal =
-  centerLayer $
-    hLimit 84 $
-      withBorderStyle unicodeRounded $
-        borderWithLabel (withAttr attrModalBorder (txt " Guía Rápida de Atajos de Teclado, Ratón y Comandos de TAXIDE ")) $
-          padLeftRight 2 $ vBox
-            [ withAttr attrHeader (txt "1. Controles de Ratón (Mouse Tracking):")
-            , txt "  • Click izquierdo en celda    : Selecciona la celda (2º click abre editor)"
-            , txt "  • Click derecho en celda      : Abre directamente el editor de esa celda"
-            , txt "  • Click en '[1:estado]' abajo : Asigna ese estado en 1 click y propaga el DAG"
-            , txt "  • Rueda del ratón (Scroll)    : Desplaza verticalmente la matriz"
-            , txt "  • Click en pestañas / botones : Cambia vista, agrega especie, guarda o exporta"
-            , hBorder
-            , withAttr attrHeader (txt "2. Atajos de Teclado (Modo Normal Estilo VIM):")
-            , txt "  • h, j, k, l / Flechas        : Mover cursor 2D (Izquierda, Abajo, Arriba, Derecha)"
-            , txt "  • g / G  |  0 / $             : Primera/última fila  |  Primera/última columna"
-            , txt "  • Ctrl+d / Ctrl+u / PgDn/PgUp : Avanzar / retroceder media página"
-            , txt "  • i / e / Enter               : Editar expresión DELTA de la celda activa"
-            , txt "  • -  |  u  |  x / Del         : Inaplicable (-) | Desconocida (U) | Restaurar heredado/implícito"
-            , txt "  • o  |  O                     : Agregar nueva especie (:add) o variante (:add+)"
-            , txt "  • Tab  |  1, 2, 3, 4          : Alternar entre Matriz, Linter, Árbol y Clave"
-            , txt "  • /texto                      : Buscar taxón o carácter por nombre"
-            , hBorder
-            , withAttr attrHeader (txt "3. Comandos Ex (pulsando ':'):")
-            , txt "  • :add Nombre <Autor, Año>    : Agrega una especie primaria (#) y salta a su fila"
-            , txt "  • :add+ Nombre variante       : Agrega una variante subordinada (#+)"
-            , txt "  • :tree [parsimony|upgma|nj]  : Reconstruye cladograma o fenograma en vivo"
-            , txt "  • :key [es|en]                : Genera clave dicotómica por entropía de Shannon"
-            , txt "  • :theme <nombre>             : Cambia tema (gruvbox | nord | dracula | catppuccin)"
-            , txt "  • :export <fmt> <archivo>     : Exporta a nexus|tnt|dwca|json|md|html|hdf5"
-            , txt "  • :w  |  :wq  |  :q!          : Guardar cambios  |  Guardar y salir  |  Salir sin guardar"
-            , hBorder
-            , clickable ClickModalCancel (withAttr attrButtonActive (txt " [ Cerrar Ayuda (Esc / ? / Enter) ] "))
-            ]
+-- | Ventana modal de ayuda interactiva (@?@ o botón @[? Ayuda]@), adaptable a terminales 80x24.
+drawHelpModal :: AppState -> Widget ResourceName
+drawHelpModal st =
+  let modalW = min 84 (max 44 (asTermWidth st - 4))
+  in centerLayer $
+       hLimit modalW $
+         withBorderStyle unicodeRounded $
+           borderWithLabel (withAttr attrModalBorder (txt " Guía Rápida de Atajos de Teclado, Ratón y Comandos de TAXIDE ")) $
+             padLeftRight 2 $ vBox
+               [ withAttr attrHeader (txt "1. Controles de Ratón (Mouse Tracking):")
+               , txt "  • Click izquierdo en celda    : Selecciona la celda (2º click abre editor)"
+               , txt "  • Click derecho en celda      : Abre directamente el editor de esa celda"
+               , txt "  • Click en '[1:estado]' abajo : Asigna ese estado en 1 click y propaga el DAG"
+               , txt "  • Rueda del ratón (Scroll)    : Desplaza verticalmente la vista activa"
+               , txt "  • Click en pestañas / botones : Cambia vista, agrega especie, guarda o exporta"
+               , hBorder
+               , withAttr attrHeader (txt "2. Atajos de Teclado (Modo Normal Estilo VIM):")
+               , txt "  • h, j, k, l / Flechas        : Mover cursor 2D (o seleccionar en Linter)"
+               , txt "  • g / G  |  0 / $             : Primera/última fila  |  Primera/última columna"
+               , txt "  • e / Enter  |  i / c         : Editar precargando valor actual  |  Insertar limpio"
+               , txt "  • u  |  Ctrl+r                : Deshacer (Undo)  |  Rehacer (Redo)"
+               , txt "  • -  |  U (Shift+u)  |  x/Del : Inaplicable (-) | Desconocida (U) | Restaurar heredado"
+               , txt "  • o  |  O                     : Agregar nueva especie (:add) o variante (:add+)"
+               , txt "  • Tab  |  1, 2, 3, 4          : Alternar entre Matriz, Linter, Árbol y Clave"
+               , txt "  • /texto                      : Buscar taxón o carácter por nombre"
+               , hBorder
+               , withAttr attrHeader (txt "3. Comandos Ex (pulsando ':'):")
+               , txt "  • :add Nombre <Autor, Año>    : Agrega una especie primaria (#) y salta a su fila"
+               , txt "  • :add+ Nombre variante       : Agrega una variante subordinada (#+)"
+               , txt "  • :tree [parsimony|upgma|nj]  : Reconstruye cladograma o fenograma en vivo"
+               , txt "  • :key [es|en]                : Genera clave dicotómica por entropía de Shannon"
+               , txt "  • :theme <nombre>             : Cambia tema (gruvbox | nord | dracula | catppuccin)"
+               , txt "  • :export <fmt> <archivo>     : Exporta a nexus|tnt|dwca|json|md|html|hdf5"
+               , txt "  • :w  |  :wq  |  :q!          : Guardar cambios  |  Guardar y salir  |  Salir sin guardar"
+               , hBorder
+               , clickable ClickModalCancel (withAttr attrButtonActive (txt " [ Cerrar Ayuda (Esc / ? / Enter) ] "))
+               ]
 
--- | Barra de estado modal inferior estilo VIM (100% ancho de pantalla).
+-- | Barra de estado modal inferior estilo VIM con ayuda contextual según el panel enfocado.
 drawStatusBar :: AppState -> Widget ResourceName
 drawStatusBar st =
   let (modeAttr, modeLabel) = case asMode st of
@@ -528,8 +563,18 @@ drawStatusBar st =
       posText =
         " [T" <> T.pack (show (asCursorRow st + 1)) <> "/" <> T.pack (show (numTaxaState st))
         <> ", C" <> T.pack (show (asCursorCol st)) <> "/" <> T.pack (show (numCharsState st)) <> "] "
+      contextHint = case asFocus st of
+        FocusGrid   -> " [hjkl:Mover | e/Enter:Editar | i:Nuevo | u:Undo | Ctrl+r:Redo | U:Desc | -:Inap | x:Restaurar] "
+        FocusLinter -> " [j/k:Seleccionar diagnóstico | Enter:Saltar a celda | g/G:Inicio/Fin | Tab:Vista] "
+        FocusTree   -> " [j/k/PgDn:Scroll | :tree parsimony|upgma|nj | Tab:Vista] "
+        FocusKey    -> " [j/k/PgDn:Scroll | :key es|en | Tab:Vista] "
+      msgOrHint =
+        if T.null (asStatusMsg st)
+          then contextHint
+          else " " <> asStatusMsg st
   in withAttr attrStatusBar $ hBox
        [ withAttr modeAttr (txt modeLabel)
        , withAttr attrHeader (txt posText)
-       , padRight Max (txt (" " <> asStatusMsg st))
+       , padRight Max (txt msgOrHint)
+       , withAttr attrHeader (txt contextHint)
        ]

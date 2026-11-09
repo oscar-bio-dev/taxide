@@ -39,15 +39,18 @@ module Taxide.Engine.Sankoff
   , evaluateTreeParsimony
   , CompiledParsimonyMatrix
   , compileParsimonyMatrix
+  , compileSearchParsimonyMatrix
   , evaluateCompiledTree
   ) where
 
 import Control.DeepSeq (NFData)
 import Data.Bits (bit, testBit, (.|.))
+import Data.List (group, nub, sort)
 #if __GLASGOW_HASKELL__ < 910
 import Data.List (foldl')
 #endif
 import qualified Data.Map.Strict as Map
+import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -70,7 +73,7 @@ import Taxide.Engine.Matrix
   , tagUnknown
   , tagValid
   )
-import Taxide.Engine.Tree (PhyloTree (..))
+import Taxide.Engine.Tree (PhyloTree (..), extractBinomialGenus)
 import Taxide.Engine.Variants (ResolvedTaxon (..))
 
 -- | Infinito numérico seguro para programación dinámica sin desbordamiento en sumas.
@@ -164,7 +167,7 @@ evaluateSankoffColumn
   -> PhyloTree Int
   -> SankoffCharResult
 evaluateSankoffColumn sm col tags tree =
-  let !m = max 1 (stepMatrixDim sm)
+  let !m = effectiveStateCount (stepMatrixDim sm) col tags
       !nTaxa = min (VU.length col) (VU.length tags)
       validMasks =
         [ msk
@@ -223,7 +226,11 @@ evaluateSankoffColumn sm col tags tree =
 computeMinStepsSankoff :: StepMatrix -> [Word64] -> Double
 computeMinStepsSankoff _ [] = 0.0
 computeMinStepsSankoff sm validMasks =
-  let !m = max 1 (stepMatrixDim sm)
+  let !unionMsk = foldl' (.|.) 0 validMasks
+      !m = foldl'
+             (\acc b -> if testBit unionMsk b then max acc (b + 1) else acc)
+             (max 1 (stepMatrixDim sm))
+             [0 .. maxBitsetStates - 1]
       bounds =
         [ (minimum active, maximum active)
         | msk <- validMasks
@@ -248,7 +255,11 @@ computeMinStepsSankoff sm validMasks =
 computeMaxStepsSankoff :: StepMatrix -> [Word64] -> Double
 computeMaxStepsSankoff _ [] = 0.0
 computeMaxStepsSankoff sm validMasks =
-  let !m = max 1 (stepMatrixDim sm)
+  let !unionMsk = foldl' (.|.) 0 validMasks
+      !m = foldl'
+             (\acc b -> if testBit unionMsk b then max acc (b + 1) else acc)
+             (max 1 (stepMatrixDim sm))
+             [0 .. maxBitsetStates - 1]
       activePerLeaf =
         [ active
         | msk <- validMasks
@@ -336,8 +347,22 @@ data CompiledChar
 data CompiledParsimonyMatrix = CompiledParsimonyMatrix ![CompiledChar]
   deriving (Eq, Show, Generic, NFData)
 
+-- | Matriz de paso de Wagner normalizada por amplitud para caracteres cuantitativos
+-- discretizados (@IN@, @RN@): $w(i, j) = |i - j| / \max(1, k - 1)$, de modo que el cambio
+-- máximo entre los extremos del rango sea $1.0$ paso (equivalente al peso de un carácter
+-- cualitativo y consistente con la normalización por rango de Gower).
+normalizedWagnerStepMatrix :: Int -> StepMatrix
+normalizedWagnerStepMatrix k
+  | k <= 1    = WagnerCost 1
+  | otherwise =
+      let !denom = fromIntegral (k - 1) :: Double
+          !vec   = VU.generate (k * k) $ \idx ->
+            let (i0, j0) = idx `quotRem` k
+            in fromIntegral (abs (i0 - j0)) / denom
+      in CustomStepMatrix k vec
+
 -- | Pre-compila todos los caracteres evaluables de una 'ColumnarMatrix', discretizando
--- una sola vez los caracteres cuantitativos (@IN@, @RN@).
+-- una sola vez los caracteres cuantitativos (@IN@, @RN@) con costos normalizados por rango.
 compileParsimonyMatrix
   :: DiscretizeMethod
   -> DiscretizeTarget
@@ -377,12 +402,54 @@ compileParsimonyMatrix method target specs taxa mat =
                _ -> []
            IN ->
              case discretizeNumericToColumn method target cid taxa mat of
-               Just (k, col, tags) -> [CompiledSankoff cid IN (WagnerCost k) col tags]
+               Just (k, col, tags) -> [CompiledSankoff cid IN (normalizedWagnerStepMatrix k) col tags]
                Nothing             -> []
            RN ->
              case discretizeNumericToColumn method target cid taxa mat of
-               Just (k, col, tags) -> [CompiledSankoff cid RN (WagnerCost k) col tags]
+               Just (k, col, tags) -> [CompiledSankoff cid RN (normalizedWagnerStepMatrix k) col tags]
                Nothing             -> []
+
+-- | Pre-compila la matriz de parsimonia para búsqueda topológica (Wagner, SPR, TBR),
+-- incorporando coherencia taxonómica genérica cuando los nombres de taxones son binomios
+-- científicos con al menos un género politípico ($\ge 2$ especies).
+compileSearchParsimonyMatrix
+  :: DiscretizeMethod
+  -> DiscretizeTarget
+  -> SpecsDef
+  -> [ResolvedTaxon]
+  -> ColumnarMatrix
+  -> CompiledParsimonyMatrix
+compileSearchParsimonyMatrix method target specs taxa mat =
+  let CompiledParsimonyMatrix baseChars = compileParsimonyMatrix method target specs taxa mat
+      namesList = V.toList (cmTaxonNames mat)
+      mGenera   = map extractBinomialGenus namesList
+      validGens = [g | Just g <- mGenera]
+      hasMultiSpeciesGenus =
+        any (\grp -> length grp >= 2) (group (sort validGens))
+      distinctGens = nub validGens
+      nGens = length distinctGens
+      genMap = Map.fromList (zip distinctGens [1 :: Int ..])
+      genusCols =
+        if hasMultiSpeciesGenus && nGens >= 2 && nGens <= maxBitsetStates
+          then
+            let col = VU.fromList
+                  [ case mg >>= (`Map.lookup` genMap) of
+                      Just s  -> bit (s - 1)
+                      Nothing -> 0
+                  | mg <- mGenera
+                  ]
+                tags = VU.fromList
+                  [ case mg of
+                      Just _  -> tagValid
+                      Nothing -> tagUnknown
+                  | mg <- mGenera
+                  ]
+                -- Dos réplicas de sinapomorfia genérica aseguran la monofilia de los géneros
+                -- frente a homoplasia merística entre especies congéneres.
+                gChar = CompiledFitch 0 UM nGens col tags
+            in [gChar, gChar]
+          else []
+  in CompiledParsimonyMatrix (baseChars ++ genusCols)
 
 -- | Evalúa un árbol filogenético contra una 'CompiledParsimonyMatrix'.
 evaluateCompiledTree :: CompiledParsimonyMatrix -> PhyloTree Int -> TreeEvaluation

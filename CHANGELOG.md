@@ -7,6 +7,28 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ---
 
+## [Unreleased] / [0.5.1] - 2026-11-09
+
+### 🚀 Añadido
+- **`Taxide.Engine.Tree`:**
+  - `TaxonLineage` y `extractTaxonLineages`: extracción e inferencia automática de linajes taxonómicos superiores (*Filo → Clase → Subclase → Orden → Familia → Género*).
+  - `renderTaxonomicHierarchy`: renderizado jerárquico de clasificación zoológica/botánica en arte Unicode.
+  - `renderAnnotatedCladogram`: cladogramas anotados con sinapomorfías y nombres de clados en nodos internos en lugar de signos `+` ambiguos.
+  - `orientPhylogeny`: enraizamiento analítico por grupo externo basal taxonómico (*Outgroup Rooting*).
+  - `ladderizeTree`: escalonamiento canónico de clados para eliminar escaleras diagonales y líneas cruzadas.
+- **`Taxide.Engine.Key`:**
+  - Biparticiones binarias diagnósticas estrictas mediante evaluación de Shannon sobre biparticiones.
+  - Discretización local por umbrales enteros para caracteres de conteo merístico (`IN`), suprimiendo decimales artificiales en segmentos corporales.
+  - Co-diagnósticos redundantes concatenados con `"; "` para clados equivalentes.
+  - Formato limpio de comentarios DELTA `<...>` a `(...)` y enunciados estandarizados `Característica: estado`.
+
+### 🐛 Corregido
+- **`Taxide.Engine.Key`:** corrección del error de pre-orden en `numberCouplets` que desfasaba los números de los dilemas referenciados.
+- **`Taxide.Engine.Sankoff`:** normalización por amplitud en matrices de paso de Wagner para caracteres cuantitativos (`normalizedWagnerStepMatrix`).
+- **`Taxide.TUI.Update` y `TreeMain`:** incorporación de la jerarquía taxonómica superior y el cladograma anotado en el informe filogenético y en la pestaña de árbol de la TUI.
+
+---
+
 ## [0.5.0] - 2026-10-28 (Release v1.0.0 — Fase 5 Final)
 
 ### 🚀 Añadido

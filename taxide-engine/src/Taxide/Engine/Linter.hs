@@ -230,16 +230,31 @@ lintIndistinguishableTaxa mat =
                 ]
   in if (null discreteCids && null numericCids) || nTaxa < 2
        then []
-       else [ indistinguishableTaxaDiag (names V.! i) (names V.! j) | (i, j) <- pairs ]
+       else [ indistinguishableTaxaDiag tNameI tNameJ
+            | (i, j) <- pairs
+            , Just tNameI <- [names V.!? i]
+            , Just tNameJ <- [names V.!? j]
+            ]
   where
     rowSignature i discreteCids numericCids =
-      ( [ (cmDiscreteTags mat Map.! cid VU.! i, cmDiscreteCols mat Map.! cid VU.! i)
-        | cid <- discreteCids ]
-      , [ ( ncPseudoTags ncol VU.! i
-          , ( ncAbsMin ncol VU.! i, ncNormalLow ncol VU.! i, ncCenter ncol VU.! i
-            , ncNormalHigh ncol VU.! i, ncAbsMax ncol VU.! i ) )
+      ( [ (tagVal, colVal)
+        | cid <- discreteCids
+        , Just tags <- [Map.lookup cid (cmDiscreteTags mat)]
+        , Just cols <- [Map.lookup cid (cmDiscreteCols mat)]
+        , Just tagVal <- [tags VU.!? i]
+        , Just colVal <- [cols VU.!? i]
+        ]
+      , [ ( tagVal
+          , ( aMin, nLow, cen, nHi, aMax ) )
         | cid <- numericCids
-        , let ncol = cmNumericCols mat Map.! cid ]
+        , Just ncol <- [Map.lookup cid (cmNumericCols mat)]
+        , Just tagVal <- [ncPseudoTags ncol VU.!? i]
+        , Just aMin   <- [ncAbsMin ncol VU.!? i]
+        , Just nLow   <- [ncNormalLow ncol VU.!? i]
+        , Just cen    <- [ncCenter ncol VU.!? i]
+        , Just nHi    <- [ncNormalHigh ncol VU.!? i]
+        , Just aMax   <- [ncAbsMax ncol VU.!? i]
+        ]
       )
 
 -- | Determina si un carácter es cualitativo (UM, OM, EUM, EOM o default UM).

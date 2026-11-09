@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -12,6 +13,9 @@ module Taxide.Engine.Implicits
   ( injectImplicits
   ) where
 
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
@@ -71,7 +75,7 @@ validateImplicitRules typeMap rules = foldr check ([], []) rules
 applyImplicitRules :: [ImplicitRule] -> ResolvedTaxon -> ResolvedTaxon
 applyImplicitRules rules taxon =
   let initialAttrs = rtAttributes taxon
-      finalAttrs = foldl applyRule initialAttrs rules
+      finalAttrs = foldl' applyRule initialAttrs rules
   in taxon { rtAttributes = finalAttrs }
   where
     applyRule attrs rule =

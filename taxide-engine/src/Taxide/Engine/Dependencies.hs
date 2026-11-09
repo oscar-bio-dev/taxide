@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -14,9 +15,15 @@ module Taxide.Engine.Dependencies
   , topologicalSortDAG
   ) where
 
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (find, foldl', nub, sortOn)
+#else
 import Data.List (find, nub, sortOn)
+#endif
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Sequence (Seq ((:<|)), (|>))
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
 import Taxide.Core.Invariants (collectActiveStates, isDependencyTriggered)
@@ -52,13 +59,13 @@ checkDependencyDAG rules =
 
 -- | Construye el mapa de adyacencia de dependencias: Controlador -> [Dependientes].
 buildAdjacencyMap :: [DependentRule] -> Map Int [Int]
-buildAdjacencyMap rules = foldl addRule Map.empty rules
+buildAdjacencyMap rules = foldl' addRule Map.empty rules
   where
     addRule acc (DependentRule c _ deps) =
       let currentDeps = Map.findWithDefault [] c acc
           accWithCtrl = Map.insert c (nub (currentDeps ++ deps)) acc
           -- Asegurar que los nodos destino también existan en el mapa
-          accWithAll = foldl (\m d -> if Map.member d m then m else Map.insert d [] m) accWithCtrl deps
+          accWithAll = foldl' (\m d -> if Map.member d m then m else Map.insert d [] m) accWithCtrl deps
       in accWithAll
 
 -- | Ordenamiento topológico utilizando el Algoritmo de Kahn.
@@ -70,24 +77,24 @@ topologicalSortDAG graph = go initialQueue initialInDegrees []
 
     -- Calcular in-degree de cada nodo
     initialInDegrees :: Map Int Int
-    initialInDegrees = foldl countIn (Map.fromSet (const 0) (Map.keysSet graph)) allNodes
+    initialInDegrees = foldl' countIn (Map.fromSet (const 0) (Map.keysSet graph)) allNodes
       where
         countIn degMap u =
           let neighbors = Map.findWithDefault [] u graph
-          in foldl (\m v -> Map.adjust (+ 1) v m) degMap neighbors
+          in foldl' (\m v -> Map.adjust (+ 1) v m) degMap neighbors
 
-    -- Nodos con in-degree = 0
-    initialQueue :: [Int]
-    initialQueue = [u | (u, deg) <- Map.toList initialInDegrees, deg == 0]
+    -- Nodos con in-degree = 0 en cola FIFO O(1)
+    initialQueue :: Seq Int
+    initialQueue = Seq.fromList [u | (u, deg) <- Map.toList initialInDegrees, deg == 0]
 
-    go [] _degMap acc =
+    go Seq.Empty _degMap acc =
       if length acc == Map.size graph
         then Just (reverse acc)
         else Nothing
 
-    go (u : q) degMap acc =
+    go (u :<| q) degMap acc =
       let neighbors = Map.findWithDefault [] u graph
-          (newQ, newDeg) = foldl decDegree (q, degMap) neighbors
+          (newQ, newDeg) = foldl' decDegree (q, degMap) neighbors
       in go newQ newDeg (u : acc)
 
     decDegree (q, degs) v =
@@ -95,7 +102,7 @@ topologicalSortDAG graph = go initialQueue initialInDegrees []
           updatedDeg = currentDeg - 1
           degs' = Map.insert v updatedDeg degs
       in if updatedDeg == 0
-           then (q ++ [v], degs')
+           then (q |> v, degs')
            else (q, degs')
 
 -- | Localiza un ciclo dirigido mediante DFS para reportar diagnósticos claros.
@@ -148,7 +155,7 @@ propagateTaxonRules
   -> ResolvedTaxon
   -> (ResolvedTaxon, [LintDiagnostic])
 propagateTaxonRules rules taxon =
-  let (finalTaxon, revDiags) = foldl evaluateRule (taxon, []) rules
+  let (finalTaxon, revDiags) = foldl' evaluateRule (taxon, []) rules
   in (finalTaxon, reverse revDiags)
   where
     taxonName = rtName taxon
@@ -181,7 +188,7 @@ propagateTaxonRules rules taxon =
 
     -- Forzar a Inapplicable a los caracteres dependientes
     applyInactivation ctrlId deps currTaxon accDiags =
-      foldl (inactivateDep ctrlId) (currTaxon, accDiags) deps
+      foldl' (inactivateDep ctrlId) (currTaxon, accDiags) deps
 
     inactivateDep ctrlId (currTaxon, diags) depId =
       let currentAttrs = rtAttributes currTaxon

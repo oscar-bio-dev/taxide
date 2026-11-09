@@ -47,10 +47,15 @@ import Taxide.Engine.Search
   )
 import Taxide.Engine.Tree
   ( PhyloTree
+  , TaxonLineage
+  , extractTaxonLineages
   , mapTreeTaxa
-  , renderAsciiTree
+  , orientPhylogeny
+  , renderAnnotatedCladogram
   , renderNewick
+  , renderTaxonomicHierarchy
   )
+import Data.Vector (Vector)
 
 -- | Método de reconstrucción filogenética o fenética.
 data TreeMethod
@@ -146,11 +151,13 @@ fmtDec prec d = T.pack (showFFloat (Just prec) d "")
 renderReport
   :: TreeMethod
   -> SearchStrategy
+  -> Vector TaxonLineage
+  -> PhyloTree Int
   -> PhyloTree Text
   -> TreeEvaluation
   -> Maybe (Int, Int)
   -> Text
-renderReport method strategy namedTree eval mSearchStats =
+renderReport method strategy lineages idxTree namedTree eval mSearchStats =
   let methodTitle = case method of
         MethodParsimony -> "Máxima Parsimonia (Fitch / Sankoff-Wagner) — Búsqueda " <> T.pack (show strategy)
         MethodUPGMA     -> "Fenética de Gower — Agrupamiento UPGMA"
@@ -161,6 +168,15 @@ renderReport method strategy namedTree eval mSearchStats =
           [ "  * Iteraciones de mejora : " <> T.pack (show iters)
           , "  * Topologías evaluadas  : " <> T.pack (show cands)
           ]
+      hierarchyLines =
+        let rawH = renderTaxonomicHierarchy lineages
+        in if T.null (T.strip rawH)
+             then []
+             else
+               [ "--- Jerarquía Taxonómica Superior (Filo → Clase → Subclase → Orden → Familia → Género) ---"
+               , T.stripEnd rawH
+               , ""
+               ]
       charRows =
         [ "  " <> padRight 6 (T.pack (show (cmCharId cm)))
           <> padRight 6 (T.pack (show (cmCharType cm)))
@@ -177,8 +193,9 @@ renderReport method strategy namedTree eval mSearchStats =
        , "======================================================================"
        , "Método: " <> methodTitle
        , ""
-       , "--- Topología (ASCII / Unicode) ---"
-       , T.stripEnd (renderAsciiTree namedTree)
+       ] ++ hierarchyLines ++
+       [ "--- Cladograma / Fenograma Anotado (ASCII / Unicode) ---"
+       , T.stripEnd (renderAnnotatedCladogram lineages idxTree)
        , ""
        , "--- Representación Newick ---"
        , renderNewick namedTree
@@ -229,10 +246,11 @@ main = do
     unless (optForce opts) $
       die' "[ERROR] El linter reportó errores; corríjalos o use --force para continuar."
 
-  let specs = dsSpecs dataset
-      taxa  = prTaxa res
-      mat   = prMatrix res
-      disc  = optDiscretize opts
+  let specs    = dsSpecs dataset
+      taxa     = prTaxa res
+      mat      = prMatrix res
+      disc     = optDiscretize opts
+      lineages = extractTaxonLineages (dsChars dataset) taxa mat
 
       (idxTree, eval, mStats) = case optMethod opts of
         MethodParsimony ->
@@ -240,20 +258,20 @@ main = do
           in (srBestTree sr, srEvaluation sr, Just (srIterations sr, srCandidates sr))
         MethodUPGMA ->
           let dm = computeGowerMatrix specs mat
-              t  = buildUPGMA dm
+              t  = orientPhylogeny lineages (buildUPGMA dm)
               ev = evaluateTreeParsimony disc UseCenterVal specs taxa mat t
           in (t, ev, Nothing)
         MethodNJ ->
           let dm = computeGowerMatrix specs mat
-              t  = buildNeighborJoining dm
+              t  = orientPhylogeny lineages (buildNeighborJoining dm)
               ev = evaluateTreeParsimony disc UseCenterVal specs taxa mat t
           in (t, ev, Nothing)
 
       namedTree = mapTreeTaxa (cmTaxonNames mat) idxTree
       outText = case optFormat opts of
         FmtNewick -> renderNewick namedTree <> "\n"
-        FmtAscii  -> renderAsciiTree namedTree
-        FmtReport -> renderReport (optMethod opts) (optSearch opts) namedTree eval mStats
+        FmtAscii  -> renderAnnotatedCladogram lineages idxTree
+        FmtReport -> renderReport (optMethod opts) (optSearch opts) lineages idxTree namedTree eval mStats
 
   case optOutput opts of
     Nothing   -> TIO.putStr outText

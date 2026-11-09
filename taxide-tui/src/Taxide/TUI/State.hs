@@ -37,6 +37,7 @@ module Taxide.TUI.State
   , numCharsState
   , currentTaxon
   , currentCharacter
+  , currentCellDeltaSyntax
   , lookupTaxonAtRow
   , lookupCellAttributedState
   , lookupCellDiagnostics
@@ -59,6 +60,7 @@ import Taxide.Core.Character (CharacterDef (..))
 import Taxide.Core.Specs (SpecsDef (..))
 import Taxide.Core.Types (RawAttribute)
 import Taxide.Delta.Pipeline (DeltaDataset (..))
+import Taxide.Delta.Serializer.Items (renderAttribute)
 import Taxide.Engine.Diagnostic
   ( DiagnosticLocation (..)
   , LintDiagnostic (..)
@@ -66,7 +68,7 @@ import Taxide.Engine.Diagnostic
   )
 import Taxide.Engine.Matrix (ColumnarMatrix (..))
 import Taxide.Engine.Pipeline (runPipelinePure)
-import Taxide.Engine.Variants (AttributedState (..), ResolvedTaxon (..))
+import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..))
 import Taxide.Theme.Types (ThemeName (..))
 
 -- | Acciones rápidas ejecutables mediante un clic de ratón en la barra de herramientas.
@@ -215,6 +217,12 @@ data AppState = AppState
   -- ^ Caché de la última clave dicotómica generada (@:key@)
   , asPendingIO    :: ![PendingIOAction]
   -- ^ Acciones de E/S pendientes de vaciar por el ejecutor en 'IO'
+  , asUndoStack    :: ![DeltaDataset]
+  -- ^ Pila de estados previos del dataset para deshacer cambios (@u@)
+  , asRedoStack    :: ![DeltaDataset]
+  -- ^ Pila de estados deshechos para rehacer cambios (@Ctrl+r@)
+  , asLinterCursor :: !Int
+  -- ^ Índice del diagnóstico seleccionado en la vista @FocusLinter@
   } deriving (Eq, Show, Generic)
 
 defaultViewportRows :: Int
@@ -267,6 +275,9 @@ initAppState dir ds =
        , asCachedTree   = Nothing
        , asCachedKey    = Nothing
        , asPendingIO    = []
+       , asUndoStack    = []
+       , asRedoStack    = []
+       , asLinterCursor = 0
        }
 
 -- | Re-ejecuta el pipeline semántico en memoria tras una edición en 'asDataset',
@@ -278,6 +289,7 @@ recomputePipelineState st =
       items = dsItems ds
       (taxaList, mat, diags) = runPipelinePure specs items
       cellDiagMap = buildCellDiagMap diags
+      clampedLinter = max 0 (min (max 0 (length diags - 1)) (asLinterCursor st))
   in st
        { asResolvedTaxa = V.fromList taxaList
        , asMatrix       = mat
@@ -285,6 +297,7 @@ recomputePipelineState st =
        , asCellDiags    = cellDiagMap
        , asCachedTree   = Nothing
        , asCachedKey    = Nothing
+       , asLinterCursor = clampedLinter
        }
 
 buildCellDiagMap :: [LintDiagnostic] -> Map (Text, Int) [LintDiagnostic]
@@ -318,6 +331,16 @@ currentTaxon st = lookupTaxonAtRow (asCursorRow st) st
 -- | Devuelve la definición del carácter bajo el cursor actual.
 currentCharacter :: AppState -> Maybe CharacterDef
 currentCharacter st = Map.lookup (asCursorCol st) (asCharMap st)
+
+-- | Devuelve la sintaxis DELTA actual de la celda activa para precargar el editor no destructivo.
+currentCellDeltaSyntax :: AppState -> Text
+currentCellDeltaSyntax st =
+  case lookupCellAttributedState (asCursorRow st) (asCursorCol st) st of
+    Nothing -> ""
+    Just (AttributedState raw orig) ->
+      case orig of
+        OriginInapplicableDependency _ -> ""
+        _                              -> renderAttribute raw
 
 -- | Consulta el atributo resuelto y su origen semántico en la celda @(row, col)@.
 lookupCellAttributedState :: Int -> Int -> AppState -> Maybe AttributedState

@@ -14,7 +14,8 @@ Implementa los algoritmos de búsqueda topológica especificados en la Sección 
 1. Construcción determinista por Adición Secuencial de Wagner ('wagnerBuild').
 2. Búsqueda heurística de subida de colina (*hill-climbing*) en vecindades SPR ('searchSPR')
    y TBR ('searchTBR'), paralelizada de forma determinista por lotes mediante
-   @withStrategy (parListChunk 64 rdeepseq)@.
+   @withStrategy (parListChunk 64 rdeepseq)@, seguida de orientación basal por grupo externo
+   y escalonamiento canónico ('orientPhylogeny').
 -}
 
 module Taxide.Engine.Search
@@ -40,12 +41,15 @@ import Taxide.Engine.Sankoff
   ( CompiledParsimonyMatrix
   , TreeEvaluation (..)
   , compileParsimonyMatrix
+  , compileSearchParsimonyMatrix
   , evaluateCompiledTree
   )
 import Taxide.Engine.Tree
   ( PhyloTree (..)
   , clearBranchLengths
+  , extractTaxonLineages
   , insertLeafEverywhere
+  , orientPhylogeny
   , sprNeighbors
   , tbrNeighbors
   )
@@ -102,8 +106,10 @@ wagnerBuild
   -> ColumnarMatrix
   -> PhyloTree Int
 wagnerBuild method target specs taxa mat =
-  let compiled = compileParsimonyMatrix method target specs taxa mat
-  in fst (wagnerBuildCompiled compiled (cmNumTaxa mat))
+  let searchMat = compileSearchParsimonyMatrix method target specs taxa mat
+      lins      = extractTaxonLineages [] taxa mat
+      rawTree   = fst (wagnerBuildCompiled searchMat (cmNumTaxa mat))
+  in orientPhylogeny lins rawTree
 
 -- | Versión interna de 'wagnerBuild' que reutiliza la matriz compilada y contabiliza candidatos.
 wagnerBuildCompiled
@@ -137,8 +143,15 @@ searchSPR
   -> PhyloTree Int
   -> SearchResult
 searchSPR method target specs taxa mat initialTree =
-  let compiled = compileParsimonyMatrix method target specs taxa mat
-  in hillClimb sprNeighbors compiled initialTree
+  let searchMat = compileSearchParsimonyMatrix method target specs taxa mat
+      evalMat   = compileParsimonyMatrix method target specs taxa mat
+      lins      = extractTaxonLineages [] taxa mat
+      res       = hillClimb sprNeighbors searchMat initialTree
+      oriented  = orientPhylogeny lins (srBestTree res)
+  in res
+       { srBestTree   = oriented
+       , srEvaluation = evaluateCompiledTree evalMat oriented
+       }
 
 -- | Búsqueda heurística de subida de colina (*hill-climbing*) explorando la vecindad
 -- TBR (*Tree Bisection and Reconnection*) hasta alcanzar un óptimo local.
@@ -151,8 +164,15 @@ searchTBR
   -> PhyloTree Int
   -> SearchResult
 searchTBR method target specs taxa mat initialTree =
-  let compiled = compileParsimonyMatrix method target specs taxa mat
-  in hillClimb tbrNeighbors compiled initialTree
+  let searchMat = compileSearchParsimonyMatrix method target specs taxa mat
+      evalMat   = compileParsimonyMatrix method target specs taxa mat
+      lins      = extractTaxonLineages [] taxa mat
+      res       = hillClimb tbrNeighbors searchMat initialTree
+      oriented  = orientPhylogeny lins (srBestTree res)
+  in res
+       { srBestTree   = oriented
+       , srEvaluation = evaluateCompiledTree evalMat oriented
+       }
 
 -- | Bucle general de escalada de colina parametrizado por el generador de vecindad.
 hillClimb
@@ -181,7 +201,7 @@ hillClimb neighborFn compiled startTree =
                          else SearchResult currTree currEval iter newTotal
 
 -- | Ejecuta el pipeline completo de búsqueda de máxima parsimonia según la estrategia
--- seleccionada (Wagner, SPR o TBR).
+-- seleccionada (Wagner, SPR o TBR), orientando el árbol resultante por su grupo externo.
 runParsimonySearch
   :: SearchStrategy
   -> DiscretizeMethod
@@ -191,15 +211,30 @@ runParsimonySearch
   -> ColumnarMatrix
   -> SearchResult
 runParsimonySearch strategy method target specs taxa mat =
-  let compiled = compileParsimonyMatrix method target specs taxa mat
-      (wTree, wCands) = wagnerBuildCompiled compiled (cmNumTaxa mat)
+  let searchMat       = compileSearchParsimonyMatrix method target specs taxa mat
+      evalMat         = compileParsimonyMatrix method target specs taxa mat
+      lins            = extractTaxonLineages [] taxa mat
+      (wTree, wCands) = wagnerBuildCompiled searchMat (cmNumTaxa mat)
   in case strategy of
        SearchWagner ->
-         let eval = evaluateCompiledTree compiled wTree
-         in SearchResult wTree eval 0 wCands
+         let oriented = orientPhylogeny lins wTree
+             eval     = evaluateCompiledTree evalMat oriented
+         in SearchResult oriented eval 0 wCands
        SearchSPR ->
-         let res = hillClimb sprNeighbors compiled wTree
-         in res { srCandidates = srCandidates res + wCands - 1 }
+         let res      = hillClimb sprNeighbors searchMat wTree
+             oriented = orientPhylogeny lins (srBestTree res)
+             eval     = evaluateCompiledTree evalMat oriented
+         in res
+              { srBestTree   = oriented
+              , srEvaluation = eval
+              , srCandidates = srCandidates res + wCands - 1
+              }
        SearchTBR ->
-         let res = hillClimb tbrNeighbors compiled wTree
-         in res { srCandidates = srCandidates res + wCands - 1 }
+         let res      = hillClimb tbrNeighbors searchMat wTree
+             oriented = orientPhylogeny lins (srBestTree res)
+             eval     = evaluateCompiledTree evalMat oriented
+         in res
+              { srBestTree   = oriented
+              , srEvaluation = eval
+              , srCandidates = srCandidates res + wCands - 1
+              }

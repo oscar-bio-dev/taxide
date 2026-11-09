@@ -10,7 +10,7 @@ License     : Apache-2.0
 
 module Main (main) where
 
-import Data.Bits (popCount)
+import Data.Bits (bit, popCount)
 import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -59,7 +59,8 @@ import Taxide.Engine.Fitch
   , reconstructFitchAncestors
   )
 import Taxide.Engine.Gower
-  ( buildNeighborJoining
+  ( DistanceMatrix (..)
+  , buildNeighborJoining
   , buildUPGMA
   , computeGowerMatrix
   , fromDistanceFunction
@@ -85,8 +86,10 @@ import Taxide.Engine.Matrix
 import Taxide.Engine.Pipeline (runPipelinePure)
 import Taxide.Engine.Sankoff
   ( SankoffCharResult (..)
+  , StepMatrix (..)
   , TreeEvaluation (..)
   , evaluateSankoffCharacter
+  , evaluateSankoffColumn
   , evaluateTreeParsimony
   )
 import Taxide.Engine.Search
@@ -887,6 +890,47 @@ testShannonIdentificationKey = testGroup "Generador de Claves Dicotómicas por E
         (all (`T.isInfixOf` txtInd) ["Species_A", "Species_B", "Species_C", "Species_D"])
       assertBool "Clave Markdown en español contiene título"
         ("# Clave de Identificación" `T.isInfixOf` txtMdEs)
+
+  , testCase "Casos borde de auditoría: Sankoff con estado observado > declarado, Gower par indefinido = 1.0 e intervalos [min, max) mm en clave" $ do
+      -- 1. Sankoff: declarado 2 estados en SPECS pero ITEMS presenta estado 4 (bit 3)
+      let colSankoff  = VU.fromList [bit 0, bit 3]
+          tagsSankoff = VU.fromList [tagValid, tagValid]
+          tree2       = PhyloNode (PhyloLeaf 0 Nothing) (PhyloLeaf 1 Nothing) Nothing
+          scr         = evaluateSankoffColumn (WagnerCost 2) colSankoff tagsSankoff tree2
+      assertApprox "Sankoff estado 1 vs 4 (WagnerCost expandido)" 3.0 (scrSteps scr)
+      assertApprox "Sankoff minSteps 1 vs 4" 3.0 (scrMinSteps scr)
+
+      -- 2. Gower: dos taxones sin caracteres válidos en común reciben D_ij = 1.0 y figuran en dmUndefinedPairs
+      let specsDisjoint = emptySpecs
+            { specNumCharacters   = 2
+            , specMaxNumberStates = 2
+            , specCharTypes       = Map.fromList [(1, UM), (2, UM)]
+            , specNumbersOfStates = Map.fromList [(1, 2), (2, 2)]
+            }
+          itemsDisjoint =
+            [ mkPrimaryItem "Taxon_OnlyC1" [(1, mkState 1)]
+            , mkPrimaryItem "Taxon_OnlyC2" [(2, mkState 2)]
+            ]
+          (_, matDisjoint, _) = runPipelinePure specsDisjoint itemsDisjoint
+          dmDisjoint = computeGowerMatrix specsDisjoint matDisjoint
+      assertApprox "Distancia neutra par indefinido" 1.0 (lookupDistance dmDisjoint 0 1)
+      dmUndefinedPairs dmDisjoint @?= [(0, 1)]
+
+      -- 3. Clave dicotómica con carácter exclusivamente cuantitativo RN muestra intervalos [min, max) mm
+      let specsQuant = emptySpecs
+            { specNumCharacters = 1
+            , specCharTypes     = Map.fromList [(1, RN)]
+            }
+          charsQuant = [mkNumericChar 1 RN "longitud corporal" (Just "mm")]
+          itemsQuant =
+            [ mkPrimaryItem "Sp_Pequeña" [(1, AttrReal Nothing (mkSingleStat 5.0) Nothing)]
+            , mkPrimaryItem "Sp_Grande"  [(1, AttrReal Nothing (mkSingleStat 20.0) Nothing)]
+            ]
+          (taxaQuant, matQuant, _) = runPipelinePure specsQuant itemsQuant
+          keyQuant = buildIdentificationKey defaultKeyOptions specsQuant charsQuant taxaQuant matQuant
+          txtQuant = renderBracketedKey LangEs keyQuant
+      assertBool "Rama cuantitativa muestra intervalo [5, 12.5) mm" ("[5, 12.5) mm" `T.isInfixOf` txtQuant)
+      assertBool "Rama cuantitativa muestra intervalo [12.5, 20] mm" ("[12.5, 20] mm" `T.isInfixOf` txtQuant)
   ]
 
 --------------------------------------------------------------------------------

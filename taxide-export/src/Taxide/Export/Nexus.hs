@@ -21,8 +21,10 @@ module Taxide.Export.Nexus
 
 import Data.List (transpose)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Vector.Unboxed as VU
 
 import Taxide.Engine.Discretize (DiscretizeMethod (..), DiscretizeTarget (..))
 import Taxide.Engine.Variants (ResolvedTaxon (..))
@@ -52,6 +54,7 @@ renderNexus opts ctx
     names = map rtName taxa
     maxStates = maximum (map (length . ccStateLabels) cols)
     symbols = take (max 2 maxStates) stateSymbolsNexus
+    symbolsVec = VU.fromList symbols
 
     skipped = [ c | c <- Map.keys (ecCharMap ctx), c `notElem` map ccChar cols ]
 
@@ -94,9 +97,10 @@ renderNexus opts ctx
     stateLabelLines =
       let entries = [ "    " <> tshow i <> " " <> T.unwords (map quoteNexus (ccStateLabels c))
                     | (i, c) <- zip [1 :: Int ..] cols ]
-      in case entries of
-           [] -> []
-           _  -> map (<> ",") (init entries) ++ [last entries]
+          markLast []       = []
+          markLast [x]      = [x]
+          markLast (x : xs) = (x <> ",") : markLast xs
+      in markLast entries
 
     padWidth = maximum (map (T.length . quoteNexus) names ++ [0]) + 2
     rows = if null taxa then [] else transpose (map ccCells cols)
@@ -110,7 +114,7 @@ renderNexus opts ctx
       CellMissing -> "?"
       CellGap     -> "-"
       CellStates kind ss ->
-        let body = T.pack [symbols !! s | s <- ss]
+        let body = T.pack (mapMaybe (symbolsVec VU.!?) ss)
         in case kind of
              VkSingle      -> body
              VkPolymorphic -> "(" <> body <> ")"

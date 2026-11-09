@@ -54,9 +54,10 @@ symbol = L.symbol sc
 pInteger :: Integral a => Parser a
 pInteger = lexeme L.decimal
 
--- | Parser de números reales / coma flotante.
+-- | Parser de números reales / coma flotante (con soporte de signo opcional).
 pDouble :: Parser Double
-pDouble = try (lexeme L.float) <|> (fromIntegral <$> (pInteger :: Parser Integer))
+pDouble =
+  L.signed (pure ()) (try (lexeme L.float) <|> (fromIntegral <$> (pInteger :: Parser Integer)))
 
 -- | Parser recursivo para comentarios anidados delimitados por '<' y '>'.
 -- Maneja anidamiento arbitrario: <hojas <raramente lobuladas> pubescentes>.

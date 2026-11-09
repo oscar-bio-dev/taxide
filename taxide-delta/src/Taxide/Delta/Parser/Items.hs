@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -17,6 +18,10 @@ module Taxide.Delta.Parser.Items
   ) where
 
 import Control.Monad (void)
+import Data.Char (isAlpha)
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
@@ -92,14 +97,18 @@ pAttribute mType mPrefixComment = case mType of
     _ <- optional (char '/')
     pure (AttrText mPrefixComment (T.strip textVal))
 
-  Just IN -> do
-    sr <- pStatRange (fromIntegral <$> (L.signed sc (lexeme L.decimal) :: Parser Integer))
-    pure (AttrInteger mPrefixComment sr)
+  Just IN ->
+    try (AttrStates mPrefixComment <$> pPseudoStateExpr)
+    <|> do
+      sr <- pStatRange (fromIntegral <$> (L.signed sc (lexeme L.decimal) :: Parser Integer))
+      pure (AttrInteger mPrefixComment sr)
 
-  Just RN -> do
-    sr <- pStatRange pDouble
-    mUnits <- optional (try pNestedComment)
-    pure (AttrReal mPrefixComment sr mUnits)
+  Just RN ->
+    try (AttrStates mPrefixComment <$> pPseudoStateExpr)
+    <|> do
+      sr <- pStatRange pDouble
+      mUnits <- optional (try pNestedComment <|> try pBareUnit)
+      pure (AttrReal mPrefixComment sr mUnits)
 
   Just _multistate -> do
     expr <- pStateExpr
@@ -124,12 +133,12 @@ pStateExpr = pOrExpr
     pOrExpr = do
       firstAnd <- pAndExpr
       restAnds <- many (char '/' *> pAndExpr)
-      pure (foldl StateOr firstAnd restAnds)
+      pure (foldl' StateOr firstAnd restAnds)
 
     pAndExpr = do
       firstTerm <- pRangeOrSingle
       restTerms <- many (char '&' *> pRangeOrSingle)
-      pure (foldl StateAnd firstTerm restTerms)
+      pure (foldl' StateAnd firstTerm restTerms)
 
     pRangeOrSingle = choice
       [ try pRangeTo
@@ -150,14 +159,21 @@ pStateExpr = pOrExpr
       mCom <- optional (try pNestedComment)
       pure (StateToken stNum mCom)
 
-    pPseudoStateExpr = do
-      pseudo <- choice
-        [ char 'U' *> pure Unknown
-        , char '-' *> pure Inapplicable
-        , char 'V' *> pure Variable
-        ]
-      mCom <- optional (try pNestedComment)
-      pure (PseudoState pseudo mCom)
+pPseudoStateExpr :: Parser RawStateExpr
+pPseudoStateExpr = do
+  pseudo <- choice
+    [ char 'U' *> pure Unknown
+    , try (char '-' <* notFollowedBy digitChar) *> pure Inapplicable
+    , char 'V' *> pure Variable
+    ]
+  mCom <- optional (try pNestedComment)
+  pure (PseudoState pseudo mCom)
+
+pBareUnit :: Parser Text
+pBareUnit = lexeme $ do
+  firstCh <- satisfy (\c -> isAlpha c || c == '%' || c == 'µ' || c == '°')
+  restTxt <- takeWhileP (Just "unit chars") (\c -> isAlpha c || c == '%' || c == 'µ' || c == '°')
+  pure (T.cons firstCh restTxt)
 
 -- | Parsea rangos cuantitativos y estadística descriptiva de DELTA:
 -- Formas admitidas:

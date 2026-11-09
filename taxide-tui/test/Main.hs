@@ -33,7 +33,7 @@ import Taxide.Delta.Pipeline (DeltaDataset (..))
 import Taxide.Engine.Diagnostic (LintDiagnostic (..))
 import Taxide.Engine.Matrix (ColumnarMatrix (..), tagInapplicable, tagValid)
 import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..))
-import Taxide.TUI.Draw (cellAttrAndText)
+import Taxide.TUI.Draw (cellAttrAndText, formatAccessibleCellText, truncateEllipsis)
 import Taxide.TUI.Runner
   ( applyTerminalResize
   , initAppState
@@ -374,5 +374,58 @@ main = defaultMain $ testGroup "TAXIDE TUI Headless Verification Suite (Fase 5)"
       specNumCharacters (dsSpecs (asDataset st0)) @?= 3
       let stWithTaxon = stepTUIEvents st0 ([keyChar ':'] ++ typeTextEvents "add Nueva_especie_B" ++ [keyEnter])
       length (asResolvedTaxa stWithTaxon) @?= 2
+
+  , testCase "10. Pila Undo ('u') / Redo ('Ctrl+r'), asignación 'U' (Shift+u), edición precargada ('e'/Enter) y salto desde Linter" $ do
+      let st0 = initAppState "." fixtureDataset
+      -- Inicialmente (0, 2) tiene estado "1"
+      cellAttrAndText 0 2 st0 @?= (attrCellValid, "1")
+
+      -- Mover a (0, 2) y pulsar 'e' precarga "1" en ModeEdit
+      let stMoved   = stepTUIEvent st0 (keyChar 'l')
+          stPreload = stepTUIEvent stMoved (keyChar 'e')
+      asMode stPreload @?= ModeEdit "1"
+
+      -- Ctrl+u dentro de ModeEdit limpia el buffer a ""
+      let stClearedBuf = stepTUIEvent stPreload (Vty.EvKey (Vty.KChar 'u') [Vty.MCtrl])
+      asMode stClearedBuf @?= ModeEdit ""
+
+      -- Introducir '2' y confirmar con Enter actualiza (0, 2) a "2" y apila en asUndoStack
+      let stEdited2 = stepTUIEvents stClearedBuf [keyChar '2', keyEnter]
+      cellAttrAndText 0 2 stEdited2 @?= (attrCellValid, "2")
+      length (asUndoStack stEdited2) @?= 1
+
+      -- Pulsar 'U' (Shift+u) marca la celda como Unknown ("U") y suma un segundo estado al historial Undo
+      let stUnknown = stepTUIEvent stEdited2 (keyChar 'U')
+      snd (cellAttrAndText 0 2 stUnknown) @?= "U"
+      length (asUndoStack stUnknown) @?= 2
+
+      -- Pulsar 'u' (Undo) deshace el cambio 'U' y regresa al estado "2"
+      let stUndo1 = stepTUIEvent stUnknown (keyChar 'u')
+      cellAttrAndText 0 2 stUndo1 @?= (attrCellValid, "2")
+      length (asUndoStack stUndo1) @?= 1
+      length (asRedoStack stUndo1) @?= 1
+
+      -- Pulsar 'u' por segunda vez regresa al estado original "1" y limpia asDirty
+      let stUndo2 = stepTUIEvent stUndo1 (keyChar 'u')
+      cellAttrAndText 0 2 stUndo2 @?= (attrCellValid, "1")
+      asDirty stUndo2 @?= False
+
+      -- Pulsar Ctrl+r (Redo) rehace el cambio hacia el estado "2"
+      let stRedo1 = stepTUIEvent stUndo2 (Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl])
+      cellAttrAndText 0 2 stRedo1 @?= (attrCellValid, "2")
+      asDirty stRedo1 @?= True
+
+      -- Glifos de accesibilidad cromática (· para heredado/implícito, ! para error) y elipsis Unicode
+      truncateEllipsis 10 "Craspedacusta sowerbii" @?= "Craspedac…"
+      let stViolation = stepTUIEvents st0 [keyChar 'i', keyChar '2', keyEnter, keyChar 'l', keyChar 'i', keyChar '1', keyEnter]
+      formatAccessibleCellText 0 2 "1" stViolation @?= "1!"
+
+      -- En FocusLinter, pulsar Enter sobre el diagnóstico seleccionado salta a la celda infractora en FocusGrid
+      let stAtOrigin = stepTUIEvents stViolation [keyChar 'g', keyChar '0', keyChar '2']
+      asFocus stAtOrigin @?= FocusLinter
+      let stJumpedFromLinter = stepTUIEvent stAtOrigin keyEnter
+      asFocus stJumpedFromLinter @?= FocusGrid
+      asCursorRow stJumpedFromLinter @?= 0
+      asCursorCol stJumpedFromLinter @?= 2
   ]
 

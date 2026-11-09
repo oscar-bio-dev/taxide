@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -13,6 +14,9 @@ module Taxide.Delta.Parser.Specs
   , parseSpecsText
   ) where
 
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -32,7 +36,7 @@ pSpecsFile = do
   sc
   directives <- many pDirectiveEntry
   eof
-  pure (foldr applyDirective defaultSpecs directives)
+  pure (foldl' (flip applyDirective) defaultSpecs directives)
   where
     defaultSpecs = SpecsDef 0 0 0 Map.empty Map.empty [] []
 

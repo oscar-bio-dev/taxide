@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -28,6 +29,9 @@ module Taxide.Engine.Matrix
 
 import Control.DeepSeq (NFData)
 import Data.Bits (bit, (.|.))
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
@@ -180,7 +184,7 @@ buildDiscreteCol cid taxa =
                 PseudoState Variable _     -> (0, tagVariable)
                 _ ->
                   let states = collectActiveStates expr
-                      bitmask = foldl addStateBit 0 states
+                      bitmask = foldl' addStateBit 0 states
                   in (bitmask, tagValid)
             _ ->
               (0, tagUnknown)
@@ -284,10 +288,17 @@ lookupNumericCell mat taxonIdx cid =
 
 -- | Determina si una celda ha sido resuelta como Inapplicable ('-').
 isCellInapplicable :: ColumnarMatrix -> Int -> Int -> Bool
-isCellInapplicable mat taxonIdx cid =
-  case Map.lookup cid (cmDiscreteTags mat) of
-    Just tags -> (tags VU.! taxonIdx) == tagInapplicable
-    Nothing ->
-      case Map.lookup cid (cmNumericCols mat) of
-        Just nc -> (ncPseudoTags nc VU.! taxonIdx) == tagInapplicable
-        Nothing -> False
+isCellInapplicable mat taxonIdx cid
+  | taxonIdx < 0 || taxonIdx >= cmNumTaxa mat = False
+  | otherwise =
+      case Map.lookup cid (cmDiscreteTags mat) of
+        Just tags
+          | taxonIdx < VU.length tags -> (tags VU.! taxonIdx) == tagInapplicable
+          | otherwise                 -> False
+        Nothing ->
+          case Map.lookup cid (cmNumericCols mat) of
+            Just nc
+              | taxonIdx < VU.length (ncPseudoTags nc) ->
+                  (ncPseudoTags nc VU.! taxonIdx) == tagInapplicable
+              | otherwise -> False
+            Nothing -> False

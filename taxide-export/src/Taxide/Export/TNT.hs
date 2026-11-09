@@ -20,8 +20,10 @@ module Taxide.Export.TNT
   ) where
 
 import Data.List (transpose)
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Vector.Unboxed as VU
 
 import Taxide.Core.Types (DatasetMetadata (..))
 import Taxide.Engine.Discretize (DiscretizeMethod (..), DiscretizeTarget (..))
@@ -67,11 +69,13 @@ renderTnt opts ctx
 
     title = "TAXIDE: " <> T.map (\c -> if c == '\n' then ' ' else c) (datasetTitle (ecMetadata ctx))
 
+    symbolsVec = VU.fromList stateSymbolsTnt
+
     renderCell cell = case cell of
       CellMissing -> "?"
       CellGap     -> "-"
       CellStates kind ss ->
-        let body = T.pack [stateSymbolsTnt !! s | s <- ss]
+        let body = T.pack (mapMaybe (symbolsVec VU.!?) ss)
         in case kind of
              VkSingle -> body
              _        -> "[" <> body <> "]"

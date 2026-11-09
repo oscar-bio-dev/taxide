@@ -319,9 +319,11 @@ buildUPGMA dm
                 , i < j
                 ]
               ((bestI, bestJ), minDist) = minimumBy (comparing snd <> comparing fst) pairs
-              cA = clusters Map.! bestI
-              cB = clusters Map.! bestJ
-              !newHeight = minDist / 2.0
+              fallbackCluster = UpgmaCluster 0 1 0.0 (PhyloLeaf 0 Nothing)
+              cA = Map.findWithDefault fallbackCluster bestI clusters
+              cB = Map.findWithDefault fallbackCluster bestJ clusters
+              !safeMinDist = if isNaN minDist || isInfinite minDist then 1.0 else minDist
+              !newHeight = safeMinDist / 2.0
               !branchA   = max 0.0 (newHeight - ucHeight cA)
               !branchB   = max 0.0 (newHeight - ucHeight cB)
               newTree = PhyloNode
@@ -414,10 +416,12 @@ buildNeighborJoining dm
                 , i < j
                 ]
               (_, (bestI, bestJ, dIJ, rI, rJ)) = minimumBy (comparing fst) qCandidates
-              !deltaIU = max 0.0 (0.5 * dIJ + (rI - rJ) / (2.0 * rMinus2))
-              !deltaJU = max 0.0 (dIJ - deltaIU)
-              tI = clusters Map.! bestI
-              tJ = clusters Map.! bestJ
+              !rawDeltaIU = 0.5 * dIJ + (rI - rJ) / (2.0 * rMinus2)
+              !deltaIU = if isNaN rawDeltaIU || isInfinite rawDeltaIU then 0.0 else max 0.0 rawDeltaIU
+              !rawDeltaJU = dIJ - deltaIU
+              !deltaJU = if isNaN rawDeltaJU || isInfinite rawDeltaJU then 0.0 else max 0.0 rawDeltaJU
+              tI = Map.findWithDefault (PhyloLeaf bestI Nothing) bestI clusters
+              tJ = Map.findWithDefault (PhyloLeaf bestJ Nothing) bestJ clusters
               newTree = PhyloNode
                 (setBranchLength (Just deltaIU) tI)
                 (setBranchLength (Just deltaJU) tJ)

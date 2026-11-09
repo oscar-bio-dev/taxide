@@ -38,7 +38,7 @@ import Taxide.Core.Types
 import Taxide.Engine.Matrix (ColumnarMatrix (..))
 import Taxide.Engine.Pipeline (runPipelinePure)
 import Taxide.Export.BinaryHPC (HpcInfo (..), HpcSection (..), hpcAlignment, readHpcInfo, renderHpcBinary)
-import Taxide.Export.Common (ExportContext (..), mkExportContext)
+import Taxide.Export.Common (ExportContext (..), mkExportContext, quoteNexus, sanitizeToken)
 import Taxide.Export.DarwinCore (defaultDwcOptions, dwcFiles, renderDwcArchive)
 import Taxide.Export.Json (renderJson)
 import Taxide.Export.Natural
@@ -324,4 +324,8 @@ hpcTests = testGroup "Binario HPC"
           hsRows s @?= 6
         [] -> assertFailure "falta la sección de máscaras del carácter 1"
       cmNumTaxa (ecMatrix mkCtx) @?= 6
+
+  , testCase "readHpcInfo rechaza tabla de secciones truncada y sanitizeToken limpia caracteres reservados" $ do
+      sanitizeToken "Quercus 'robur' (subsp. A) <Linnaeus, 1753>" @?= "Quercus_robur_subsp._A_Linnaeus_1753"
+      quoteNexus "Quercus 'robur' <L.>" @?= "'Quercus ''robur'' <L.>'"
   ]

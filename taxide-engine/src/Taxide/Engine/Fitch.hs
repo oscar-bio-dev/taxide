@@ -166,10 +166,11 @@ evaluateFitchColumn declaredStates col tags tree =
 computeMinStepsFitch :: [Word64] -> Int
 computeMinStepsFitch [] = 0
 computeMinStepsFitch validMasks =
-  let singletons = [m | m <- validMasks, popCount m == 1]
-      reqMask    = foldl' (.|.) 0 singletons
-      uncovered  = [m | m <- validMasks, (m .&. reqMask) == 0]
-      totalStates = greedyCover reqMask uncovered
+  let nonZeroMasks = [m | m <- validMasks, m /= 0]
+      singletons   = [m | m <- nonZeroMasks, popCount m == 1]
+      reqMask      = foldl' (.|.) 0 singletons
+      uncovered    = [m | m <- nonZeroMasks, (m .&. reqMask) == 0]
+      totalStates  = greedyCover reqMask uncovered
   in max 0 (popCount totalStates - 1)
   where
     greedyCover :: Word64 -> [Word64] -> Word64
@@ -177,13 +178,16 @@ computeMinStepsFitch validMasks =
     greedyCover !chosen remaining =
       let allBitsUnion = foldl' (.|.) 0 remaining
           candidateBits = [b | b <- [0 .. maxBitsetStates - 1], testBit allBitsUnion b]
-          bestBit = snd $ maximum
-            [ (length [m | m <- remaining, testBit m b], b)
-            | b <- candidateBits
-            ]
-          chosen' = chosen .|. bit bestBit
-          remaining' = [m | m <- remaining, (m .&. chosen') == 0]
-      in greedyCover chosen' remaining'
+      in case candidateBits of
+           [] -> chosen
+           _  ->
+             let bestBit = snd $ maximum
+                   [ (length [m | m <- remaining, testBit m b], b)
+                   | b <- candidateBits
+                   ]
+                 chosen' = chosen .|. bit bestBit
+                 remaining' = [m | m <- remaining, (m .&. chosen') == 0]
+             in greedyCover chosen' remaining'
 
 -- | Calcula el máximo cambio posible $g_k$ sobre un árbol estrella (politomía total):
 -- $g_k = N_{\text{válidas}} - \max_{a} |\{u : a \in S_u\}|$.

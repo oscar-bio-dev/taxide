@@ -32,6 +32,7 @@ import Data.List (foldl')
 #endif
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -129,8 +130,16 @@ describeSections opts ctx t =
       heading cid
         | noGroupHeadings opts = ctxCharDef ctx cid >>= charHeading
         | otherwise            = Nothing
-      -- Agrupación estable por subtítulo en orden de primera aparición.
-      order = foldl' (\acc (_, h, _) -> if h `elem` acc then acc else acc ++ [h]) [] entries
+      -- Agrupación estable por subtítulo en orden de primera aparición O(N log N).
+      (_, revOrder) = foldl'
+        (\(seen, acc) (_, h, _) ->
+          if Set.member h seen
+            then (seen, acc)
+            else (Set.insert h seen, h : acc)
+        )
+        (Set.empty, [])
+        entries
+      order = reverse revOrder
       grouped = [ (h, [f | (_, h', f) <- entries, h' == h]) | h <- order ]
   in mapMaybe (\(h, fs) -> toSection h fs) grouped
   where
@@ -199,10 +208,12 @@ fragmentFor opts ctx cid (AttributedState raw origin)
 
 -- | Asegura que el texto libre termine en signo de puntuación.
 endSentence :: Text -> Text
-endSentence t
-  | T.null t = t
-  | T.last t `elem` (".!?" :: String) = t
-  | otherwise = t <> "."
+endSentence t =
+  case T.unsnoc t of
+    Nothing -> t
+    Just (_, lastChar)
+      | lastChar `elem` (".!?" :: String) -> t
+      | otherwise                         -> t <> "."
 
 -- | Descripción en texto plano de un taxón (una línea por sección).
 plainDescription :: NaturalTaxon -> Text

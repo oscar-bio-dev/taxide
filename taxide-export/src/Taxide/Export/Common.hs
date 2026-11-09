@@ -291,13 +291,14 @@ buildCladColumns method target ctx = concatMap build [1 .. specNumCharacters (ec
               Just (AttributedState (AttrStates _ (PseudoState Inapplicable _)) _) -> CellGap
               _ -> CellMissing
           bounds = dcBoundaries dc
-          labelFor i
-            | k == 1 = "= " <> fmtNum (head' bounds) <> units
+          intervalPairs = zip [0 .. k - 1] (zip bounds (drop 1 bounds))
+          stateLabels
+            | k == 1    = ["= " <> fmtNum (head' bounds) <> units]
             | otherwise =
-                let lo = bounds !! i
-                    hi = bounds !! (i + 1)
-                    close = if i == k - 1 then "]" else ")"
-                in "[" <> fmtNum lo <> ", " <> fmtNum hi <> close <> units
+                [ let close = if i == k - 1 then "]" else ")"
+                  in "[" <> fmtNum lo <> ", " <> fmtNum hi <> close <> units
+                | (i, (lo, hi)) <- intervalPairs
+                ]
           head' xs = fromMaybe 0 (safeHead xs)
       in if k == 0 || length bounds < 2
            then []
@@ -306,7 +307,7 @@ buildCladColumns method target ctx = concatMap build [1 .. specNumCharacters (ec
                     , ccLabel       = ctxFeature ctx cid
                     , ccOrdered     = True
                     , ccDerived     = True
-                    , ccStateLabels = map labelFor [0 .. k - 1]
+                    , ccStateLabels = stateLabels
                     , ccCells       = map cellFor taxa
                     } ]
 
@@ -324,9 +325,9 @@ fmtNum d
   | isNaN d || isInfinite d = T.pack (show d)
   | d == fromIntegral (round d :: Integer) = T.pack (show (round d :: Integer))
   | otherwise =
-      let s = showFFloat (Just 3) d ""
-          trimmed = reverse (dropWhile (== '0') (reverse s))
-      in T.pack (if last trimmed == '.' then init trimmed else trimmed)
+      let raw = T.pack (showFFloat (Just 3) d "")
+          trimmed = T.dropWhileEnd (== '0') raw
+      in if T.isSuffixOf "." trimmed then T.dropEnd 1 trimmed else trimmed
 
 -- | Rango normal @n1-n2@ (o @n@), con valor central y extremos absolutos
 -- opcionales. Devuelve el valor principal y las observaciones asociadas.
@@ -378,14 +379,16 @@ compressRanges xs = T.unwords (map render (groupRuns xs))
       | otherwise  = (v, v) : acc
     step [] v = [(v, v)]
 
--- | Token sin espacios ni delimitadores (nombres de taxón en TNT).
+-- | Token sin espacios ni delimitadores reservados (nombres de taxón en TNT).
 sanitizeToken :: Text -> Text
-sanitizeToken = collapse . T.map fix . T.strip
+sanitizeToken t =
+  let res = collapse (T.map fix (T.strip t))
+  in if T.null res then "taxon" else res
   where
     -- Colapsa guiones bajos repetidos y recorta los de los extremos.
     collapse = T.dropAround (== '_') . T.intercalate "_" . filter (not . T.null) . T.splitOn "_"
     fix c
-      | isSpace c || c `elem` (";,()[]{}'\"=" :: String) = '_'
+      | isSpace c || c `elem` (";,()[]{}'\"=<>:/\\" :: String) = '_'
       | otherwise = c
 
 -- | Etiqueta NEXUS entre comillas simples (apóstrofes duplicados).

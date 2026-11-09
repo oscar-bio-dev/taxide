@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -23,6 +24,8 @@ module Taxide.TUI.Update
   , executeCommandPure
   , applyCellEditText
   , clearCellAttribute
+  , undoAction
+  , redoAction
 
     -- * Manejador Monádico para Brick
   , handleAppEvent
@@ -43,8 +46,13 @@ import Brick
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Lazy as BL
-import Data.List (find)
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (find, findIndex, foldl')
+#else
+import Data.List (find, findIndex)
+#endif
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -68,7 +76,7 @@ import Taxide.Delta.Parser.Items (pAttribute)
 import Taxide.Delta.Parser.Lexer (sc)
 import Taxide.Delta.Pipeline (DeltaDataset (..), writeDeltaDataset)
 import Taxide.Delta.Serializer.Items (renderAttribute)
-import Taxide.Engine.Diagnostic (LintDiagnostic (..), Severity (..))
+import Taxide.Engine.Diagnostic (DiagnosticLocation (..), LintDiagnostic (..), Severity (..))
 import Taxide.Engine.Discretize (DiscretizeMethod (..), DiscretizeTarget (..))
 import Taxide.Engine.Gower (buildNeighborJoining, buildUPGMA, computeGowerMatrix)
 import Taxide.Engine.Key
@@ -80,8 +88,15 @@ import Taxide.Engine.Key
 import Taxide.Engine.Matrix (ColumnarMatrix (..))
 import Taxide.Engine.Sankoff (TreeEvaluation (..), evaluateTreeParsimony)
 import Taxide.Engine.Search (SearchResult (..), SearchStrategy (..), runParsimonySearch)
-import Taxide.Engine.Tree (mapTreeTaxa, renderAsciiTree, renderNewick)
-import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..))
+import Taxide.Engine.Tree
+  ( extractTaxonLineages
+  , mapTreeTaxa
+  , orientPhylogeny
+  , renderAnnotatedCladogram
+  , renderNewick
+  , renderTaxonomicHierarchy
+  )
+import Taxide.Engine.Variants (ResolvedTaxon (..))
 import Taxide.Export.BinaryHPC (renderHpcBinary)
 import Taxide.Export.Common (mkExportContext, renderExportError)
 import Taxide.Export.DarwinCore (DwcOptions (..), renderDwcArchive)
@@ -98,7 +113,61 @@ import Taxide.TUI.State
 
 -- | Aplica una secuencia de eventos Vty de forma puramente funcional y estricta.
 stepTUIEvents :: AppState -> [Vty.Event] -> AppState
-stepTUIEvents = foldl stepTUIEvent
+stepTUIEvents = foldl' stepTUIEvent
+
+-- | Profundidad máxima de la pila de estados Undo/Redo en memoria.
+maxUndoDepth :: Int
+maxUndoDepth = 50
+
+-- | Registra el dataset actual en la pila de Undo antes de una mutación y limpia Redo.
+pushUndoState :: AppState -> AppState
+pushUndoState st =
+  st
+    { asUndoStack = take maxUndoDepth (asDataset st : asUndoStack st)
+    , asRedoStack = []
+    }
+
+-- | Deshace la última modificación sobre el dataset (@u@ en Modo Normal).
+undoAction :: AppState -> AppState
+undoAction st =
+  case asUndoStack st of
+    [] ->
+      st { asStatusMsg = "Nada que deshacer (historial de cambios vacío)." }
+    (prevDs : restUndo) ->
+      let redoStack' = take maxUndoDepth (asDataset st : asRedoStack st)
+          stRecomputed = recomputePipelineState $ st
+            { asDataset   = prevDs
+            , asUndoStack = restUndo
+            , asRedoStack = redoStack'
+            , asDirty     = not (null restUndo)
+            }
+          stClamped = setCursorPos (asCursorRow stRecomputed) (asCursorCol stRecomputed) stRecomputed
+      in stClamped
+           { asStatusMsg =
+               "Deshecho (Undo). Cambios restantes en historial: "
+               <> T.pack (show (length restUndo)) <> "."
+           }
+
+-- | Rehace la última modificación deshecha (@Ctrl+r@ en Modo Normal).
+redoAction :: AppState -> AppState
+redoAction st =
+  case asRedoStack st of
+    [] ->
+      st { asStatusMsg = "Nada que rehacer." }
+    (nextDs : restRedo) ->
+      let undoStack' = take maxUndoDepth (asDataset st : asUndoStack st)
+          stRecomputed = recomputePipelineState $ st
+            { asDataset   = nextDs
+            , asUndoStack = undoStack'
+            , asRedoStack = restRedo
+            , asDirty     = True
+            }
+          stClamped = setCursorPos (asCursorRow stRecomputed) (asCursorCol stRecomputed) stRecomputed
+      in stClamped
+           { asStatusMsg =
+               "Rehecho (Redo). Pasos disponibles para rehacer: "
+               <> T.pack (show (length restRedo)) <> "."
+           }
 
 -- | Recalcula las dimensiones responsivas del viewport ante un cambio de tamaño de la terminal $(W, H)$.
 applyTerminalResize :: Int -> Int -> AppState -> AppState
@@ -228,19 +297,35 @@ stepNormalMode st ev = case ev of
   Vty.EvKey (Vty.KChar 'l') [] -> moveCursor 0 1 st
   Vty.EvKey Vty.KRight      [] -> moveCursor 0 1 st
 
-  -- Movimiento vertical (k / Up, j / Down)
-  Vty.EvKey (Vty.KChar 'k') [] -> moveCursor (-1) 0 st
-  Vty.EvKey Vty.KUp         [] -> moveCursor (-1) 0 st
-  Vty.EvKey (Vty.KChar 'j') [] -> moveCursor 1 0 st
-  Vty.EvKey Vty.KDown       [] -> moveCursor 1 0 st
+  -- Movimiento vertical (k / Up, j / Down) sensible al panel activo (Grid vs Linter)
+  Vty.EvKey (Vty.KChar 'k') []
+    | asFocus st == FocusLinter -> moveLinterCursor (-1) st
+    | otherwise                 -> moveCursor (-1) 0 st
+  Vty.EvKey Vty.KUp []
+    | asFocus st == FocusLinter -> moveLinterCursor (-1) st
+    | otherwise                 -> moveCursor (-1) 0 st
+  Vty.EvKey (Vty.KChar 'j') []
+    | asFocus st == FocusLinter -> moveLinterCursor 1 st
+    | otherwise                 -> moveCursor 1 0 st
+  Vty.EvKey Vty.KDown []
+    | asFocus st == FocusLinter -> moveLinterCursor 1 st
+    | otherwise                 -> moveCursor 1 0 st
   Vty.EvKey Vty.KPageDown   [] -> moveCursor (max 1 (asVpRows st `div` 2)) 0 st
   Vty.EvKey Vty.KPageUp     [] -> moveCursor (-(max 1 (asVpRows st `div` 2))) 0 st
-  Vty.EvKey Vty.KHome       [] -> setCursorPos (asCursorRow st) 1 st
-  Vty.EvKey Vty.KEnd        [] -> setCursorPos (asCursorRow st) (numCharsState st) st
+  Vty.EvKey Vty.KHome []
+    | asFocus st == FocusLinter -> setLinterCursor 0 st
+    | otherwise                 -> setCursorPos (asCursorRow st) 1 st
+  Vty.EvKey Vty.KEnd []
+    | asFocus st == FocusLinter -> setLinterCursor (max 0 (length (asDiagnostics st) - 1)) st
+    | otherwise                 -> setCursorPos (asCursorRow st) (numCharsState st) st
 
   -- Saltos rápidos estilo VIM
-  Vty.EvKey (Vty.KChar 'g') [] -> setCursorPos 0 (asCursorCol st) st
-  Vty.EvKey (Vty.KChar 'G') [] -> setCursorPos (max 0 (numTaxaState st - 1)) (asCursorCol st) st
+  Vty.EvKey (Vty.KChar 'g') []
+    | asFocus st == FocusLinter -> setLinterCursor 0 st
+    | otherwise                 -> setCursorPos 0 (asCursorCol st) st
+  Vty.EvKey (Vty.KChar 'G') []
+    | asFocus st == FocusLinter -> setLinterCursor (max 0 (length (asDiagnostics st) - 1)) st
+    | otherwise                 -> setCursorPos (max 0 (numTaxaState st - 1)) (asCursorCol st) st
   Vty.EvKey (Vty.KChar '0') [] -> setCursorPos (asCursorRow st) 1 st
   Vty.EvKey (Vty.KChar '$') [] -> setCursorPos (asCursorRow st) (numCharsState st) st
   Vty.EvKey (Vty.KChar 'd') [Vty.MCtrl] ->
@@ -262,18 +347,25 @@ stepNormalMode st ev = case ev of
   Vty.EvKey (Vty.KChar '?') [] -> st { asShowHelp = not (asShowHelp st) }
   Vty.EvKey (Vty.KFun 1)    [] -> st { asShowHelp = not (asShowHelp st) }
 
-  -- Asignación rápida en Modo Normal: '-' marca Inapplicable, 'U' marca Unknown
+  -- Deshacer (u) y Rehacer (Ctrl+r) estándar VIM
+  Vty.EvKey (Vty.KChar 'u') []          -> undoAction st
+  Vty.EvKey (Vty.KChar 'r') [Vty.MCtrl] -> redoAction st
+
+  -- Asignación rápida en Modo Normal: '-' marca Inapplicable, 'U' (Shift+u) marca Unknown
   Vty.EvKey (Vty.KChar '-') [] -> applyCellEditText "-" st
-  Vty.EvKey (Vty.KChar 'u') [] -> applyCellEditText "U" st
+  Vty.EvKey (Vty.KChar 'U') [] -> applyCellEditText "U" st
 
   -- Restaurar atributo heredado / implícito o limpiar codificación explícita (x o Del)
   Vty.EvKey (Vty.KChar 'x') [] -> clearCellAttribute st
   Vty.EvKey Vty.KDel        [] -> clearCellAttribute st
 
-  -- Entrar al Modo Edición (i, e o Enter)
+  -- Entrar al Modo Edición: 'i'/'c' abre limpio; 'e'/'Enter' precarga expresión actual (o salta en Linter)
   Vty.EvKey (Vty.KChar 'i') [] -> enterEditMode st
-  Vty.EvKey (Vty.KChar 'e') [] -> enterEditMode st
-  Vty.EvKey Vty.KEnter      [] -> enterEditMode st
+  Vty.EvKey (Vty.KChar 'c') [] -> enterEditMode st
+  Vty.EvKey (Vty.KChar 'e') [] -> enterEditModePreloaded st
+  Vty.EvKey Vty.KEnter []
+    | asFocus st == FocusLinter -> jumpToSelectedDiagnostic st
+    | otherwise                 -> enterEditModePreloaded st
 
   -- Atajo estilo VIM 'o' para agregar una nueva especie (:add <Nombre>) y 'O' para variante (:add+ <Nombre>)
   Vty.EvKey (Vty.KChar 'o') [] ->
@@ -299,12 +391,45 @@ stepNormalMode st ev = case ev of
 
   _ -> st
 
--- | Entra al modo de edición para la celda bajo el cursor.
+-- | Desplaza el selector de diagnósticos en 'FocusLinter'.
+moveLinterCursor :: Int -> AppState -> AppState
+moveLinterCursor delta st =
+  setLinterCursor (asLinterCursor st + delta) st
+
+-- | Posiciona el cursor del Linter dentro del rango válido $[0, |\Lambda|-1]$.
+setLinterCursor :: Int -> AppState -> AppState
+setLinterCursor idx st =
+  let nDiags = length (asDiagnostics st)
+      clamped = if nDiags <= 0 then 0 else max 0 (min (nDiags - 1) idx)
+  in st { asLinterCursor = clamped }
+
+-- | Salta desde el diagnóstico seleccionado en 'FocusLinter' a la celda infractora en 'FocusGrid'.
+jumpToSelectedDiagnostic :: AppState -> AppState
+jumpToSelectedDiagnostic st =
+  case drop (asLinterCursor st) (asDiagnostics st) of
+    [] ->
+      st { asStatusMsg = "No hay diagnósticos activos para saltar." }
+    (d : _) ->
+      let loc = diagLocation d
+          taxaVec = asResolvedTaxa st
+          mRow = do
+            tName <- locTaxon loc
+            findIndex (\rt -> rtName rt == tName) (V.toList taxaVec)
+          targetRow = fromMaybe (asCursorRow st) mRow
+          targetCol = fromMaybe (asCursorCol st) (locCharId loc)
+          stJumped  = setCursorPos targetRow targetCol (st { asFocus = FocusGrid })
+      in stJumped
+           { asStatusMsg =
+               "Saltando a diagnóstico [" <> diagCode d <> "] en (T"
+               <> T.pack (show (targetRow + 1)) <> ", C" <> T.pack (show targetCol) <> ")."
+           }
+
+-- | Entra al modo de edición con buffer limpio (@i@ o @c@).
 enterEditMode :: AppState -> AppState
 enterEditMode st =
   let preloaded = currentCellDeltaSyntax st
       promptMsg =
-        "EDITANDO (" <> T.pack (show (asCursorRow st + 1)) <> ", C"
+        "INSERTAR (" <> T.pack (show (asCursorRow st + 1)) <> ", C"
         <> T.pack (show (asCursorCol st)) <> ") [actual: "
         <> (if T.null preloaded then "sin codificar" else preloaded) <> "]"
   in st
@@ -312,21 +437,26 @@ enterEditMode st =
        , asStatusMsg = promptMsg
        }
 
--- | Obtiene la sintaxis DELTA actual de la celda bajo el cursor.
-currentCellDeltaSyntax :: AppState -> Text
-currentCellDeltaSyntax st =
-  case lookupCellAttributedState (asCursorRow st) (asCursorCol st) st of
-    Nothing -> ""
-    Just (AttributedState raw orig) ->
-      case orig of
-        OriginInapplicableDependency _ -> "-"
-        _ -> renderAttribute raw
+-- | Entra al modo de edición precargando la expresión DELTA actual de la celda (@e@ o @Enter@).
+enterEditModePreloaded :: AppState -> AppState
+enterEditModePreloaded st =
+  let preloaded = currentCellDeltaSyntax st
+      promptMsg =
+        "EDITANDO (" <> T.pack (show (asCursorRow st + 1)) <> ", C"
+        <> T.pack (show (asCursorCol st)) <> ") [Ctrl+u para limpiar buffer]"
+  in st
+       { asMode      = ModeEdit preloaded
+       , asStatusMsg = promptMsg
+       }
 
 -- | Manejo de eventos en Modo Edición ($\mu = \textsc{Edit}$).
 stepEditMode :: AppState -> Text -> Vty.Event -> AppState
 stepEditMode st buf ev = case ev of
   Vty.EvKey Vty.KEsc [] ->
     st { asMode = ModeNormal, asStatusMsg = "Edición cancelada." }
+
+  Vty.EvKey (Vty.KChar 'u') [Vty.MCtrl] ->
+    st { asMode = ModeEdit "" }
 
   Vty.EvKey Vty.KBS [] ->
     let buf' = if T.null buf then "" else T.init buf
@@ -364,12 +494,13 @@ applyCellEditText rawInput st =
                         <> T.pack (show col) <> ": '" <> cleanInput <> "'"
            }
        Right newAttr ->
-         let oldItems = dsItems (asDataset st)
+         let stWithUndo = pushUndoState st
+             oldItems = dsItems (asDataset stWithUndo)
              inhibitedDependents = newlyInhibitedDependents specs col newAttr
              updatedItems = updateItemAtRow row col newAttr inhibitedDependents oldItems
-             newDataset = (asDataset st) { dsItems = updatedItems }
-             newOverlay = Map.insert (row, col) newAttr (asOverlay st)
-             stRecomputed = recomputePipelineState $ st
+             newDataset = (asDataset stWithUndo) { dsItems = updatedItems }
+             newOverlay = Map.insert (row, col) newAttr (asOverlay stWithUndo)
+             stRecomputed = recomputePipelineState $ stWithUndo
                { asDataset = newDataset
                , asOverlay = newOverlay
                , asMode    = ModeNormal
@@ -391,18 +522,19 @@ applyCellEditText rawInput st =
 -- o quede no codificada.
 clearCellAttribute :: AppState -> AppState
 clearCellAttribute st =
-  let row      = asCursorRow st
-      col      = asCursorCol st
-      oldItems = dsItems (asDataset st)
+  let stWithUndo = pushUndoState st
+      row        = asCursorRow stWithUndo
+      col        = asCursorCol stWithUndo
+      oldItems   = dsItems (asDataset stWithUndo)
       updatedItems =
         [ if idx == row
             then item { itemAttributes = [ (c, a) | (c, a) <- itemAttributes item, c /= col ] }
             else item
         | (idx, item) <- zip [0 ..] oldItems
         ]
-      newDataset   = (asDataset st) { dsItems = updatedItems }
-      newOverlay   = Map.delete (row, col) (asOverlay st)
-      stRecomputed = recomputePipelineState $ st
+      newDataset   = (asDataset stWithUndo) { dsItems = updatedItems }
+      newOverlay   = Map.delete (row, col) (asOverlay stWithUndo)
+      stRecomputed = recomputePipelineState $ stWithUndo
         { asDataset = newDataset
         , asOverlay = newOverlay
         , asMode    = ModeNormal
@@ -628,14 +760,15 @@ addTaxonToDataset itype rawNameInput st =
                , itemAttributes = []
                , itemComments   = []
                }
-             ds0 = asDataset st
+             stWithUndo = pushUndoState st
+             ds0 = asDataset stWithUndo
              newItems = dsItems ds0 ++ [newItem]
              oldSpecs = dsSpecs ds0
              newSpecs = oldSpecs
                { specMaxNumberItems = max (specMaxNumberItems oldSpecs) (length newItems)
                }
              newDataset = ds0 { dsSpecs = newSpecs, dsItems = newItems }
-             stRecomputed = recomputePipelineState $ st
+             stRecomputed = recomputePipelineState $ stWithUndo
                { asDataset = newDataset
                , asFocus   = FocusGrid
                , asDirty   = True
@@ -653,33 +786,46 @@ addTaxonToDataset itype rawNameInput st =
 -- | Reconstruye el árbol filogenético o fenético en memoria y activa 'FocusTree'.
 computeTreeView :: Text -> AppState -> AppState
 computeTreeView method st =
-  let specs = dsSpecs (asDataset st)
-      taxa  = V.toList (asResolvedTaxa st)
-      mat   = asMatrix st
+  let specs    = dsSpecs (asDataset st)
+      chars    = dsChars (asDataset st)
+      taxa     = V.toList (asResolvedTaxa st)
+      mat      = asMatrix st
+      lineages = extractTaxonLineages chars taxa mat
       (methodLabel, idxTree, eval) = case method of
         "upgma" ->
           let dm = computeGowerMatrix specs mat
-              t  = buildUPGMA dm
+              t  = orientPhylogeny lineages (buildUPGMA dm)
               ev = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat t
           in ("Fenética de Gower (UPGMA)", t, ev)
         "nj" ->
           let dm = computeGowerMatrix specs mat
-              t  = buildNeighborJoining dm
+              t  = orientPhylogeny lineages (buildNeighborJoining dm)
               ev = evaluateTreeParsimony SquareRootRule UseCenterVal specs taxa mat t
           in ("Fenética de Gower (Neighbor-Joining)", t, ev)
         _ ->
           let sr = runParsimonySearch SearchSPR SquareRootRule UseCenterVal specs taxa mat
           in ("Máxima Parsimonia (Fitch/Sankoff + SPR)", srBestTree sr, srEvaluation sr)
-      namedTree = mapTreeTaxa (cmTaxonNames mat) idxTree
-      rendered = T.unlines
+      namedTree    = mapTreeTaxa (cmTaxonNames mat) idxTree
+      hierarchyTxt = renderTaxonomicHierarchy lineages
+      cladogramTxt = renderAnnotatedCladogram lineages idxTree
+      rendered = T.unlines $
         [ "Método : " <> methodLabel
         , "L(T)   : " <> T.pack (show (teTotalLength eval))
           <> "   |   CI: " <> T.pack (take 6 (show (teConsistencyIndex eval)))
           <> "   |   RI: " <> T.pack (take 6 (show (teRetentionIndex eval)))
           <> "   |   RC: " <> T.pack (take 6 (show (teRescaledCI eval)))
         , "Newick : " <> renderNewick namedTree
-        , ""
-        , T.stripEnd (renderAsciiTree namedTree)
+        ] ++
+        (if T.null (T.strip hierarchyTxt)
+           then []
+           else
+             [ ""
+             , "--- Jerarquía Taxonómica Superior (Filo → Clase → Subclase → Orden → Familia → Género) ---"
+             , T.stripEnd hierarchyTxt
+             ]) ++
+        [ ""
+        , "--- Cladograma / Fenograma Anotado (ASCII / Unicode) ---"
+        , T.stripEnd cladogramTxt
         ]
   in st
        { asCachedTree = Just rendered
@@ -818,24 +964,26 @@ handleAppEvent (VtyEvent vtyEv) = do
     Just vpName | asMode st == ModeNormal && not (asShowHelp st) -> do
       let vScroll  = viewportScroll vpName
           halfPage = max 1 (asVpRows st `div` 2)
+      -- Si estamos en FocusLinter, también actualizamos asLinterCursor puramente
+      let updateLinterState = do
+            let st' = stepTUIEvent st vtyEv
+            stFinal <- liftIO (flushPendingIOActions st')
+            put stFinal
+            when (asShouldQuit stFinal) halt
       case vtyEv of
-        Vty.EvKey (Vty.KChar 'j') []          -> vScrollBy vScroll 1
-        Vty.EvKey Vty.KDown       []          -> vScrollBy vScroll 1
-        Vty.EvKey (Vty.KChar 'k') []          -> vScrollBy vScroll (-1)
-        Vty.EvKey Vty.KUp         []          -> vScrollBy vScroll (-1)
+        Vty.EvKey (Vty.KChar 'j') []          -> updateLinterState >> vScrollBy vScroll 1
+        Vty.EvKey Vty.KDown       []          -> updateLinterState >> vScrollBy vScroll 1
+        Vty.EvKey (Vty.KChar 'k') []          -> updateLinterState >> vScrollBy vScroll (-1)
+        Vty.EvKey Vty.KUp         []          -> updateLinterState >> vScrollBy vScroll (-1)
         Vty.EvKey Vty.KPageDown   []          -> vScrollBy vScroll halfPage
         Vty.EvKey (Vty.KChar 'd') [Vty.MCtrl] -> vScrollBy vScroll halfPage
         Vty.EvKey Vty.KPageUp     []          -> vScrollBy vScroll (-halfPage)
         Vty.EvKey (Vty.KChar 'u') [Vty.MCtrl] -> vScrollBy vScroll (-halfPage)
-        Vty.EvKey (Vty.KChar 'g') []          -> vScrollToBeginning vScroll
-        Vty.EvKey Vty.KHome       []          -> vScrollToBeginning vScroll
-        Vty.EvKey (Vty.KChar 'G') []          -> vScrollToEnd vScroll
-        Vty.EvKey Vty.KEnd        []          -> vScrollToEnd vScroll
-        _ -> do
-          let st' = stepTUIEvent st vtyEv
-          stFinal <- liftIO (flushPendingIOActions st')
-          put stFinal
-          when (asShouldQuit stFinal) halt
+        Vty.EvKey (Vty.KChar 'g') []          -> updateLinterState >> vScrollToBeginning vScroll
+        Vty.EvKey Vty.KHome       []          -> updateLinterState >> vScrollToBeginning vScroll
+        Vty.EvKey (Vty.KChar 'G') []          -> updateLinterState >> vScrollToEnd vScroll
+        Vty.EvKey Vty.KEnd        []          -> updateLinterState >> vScrollToEnd vScroll
+        _ -> updateLinterState
     _ -> do
       let st' = stepTUIEvent st vtyEv
       stFinal <- liftIO (flushPendingIOActions st')

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -37,6 +38,9 @@ module Taxide.Export.BinaryHPC
 import Data.Bits (shiftL, (.|.))
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Lazy as BL
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -141,7 +145,7 @@ renderHpcBinary ctx = B.toLazyByteString (header <> table <> mconcat (map body p
     -- Ubicación secuencial de los tensores, cada uno en un múltiplo de 64.
     layout = scanl (\off p -> off + padTo (fromIntegral (BL.length (pPayload p)))) headerBytes pendings
     placed = zip pendings layout
-    totalBytes = last layout
+    totalBytes = foldl' (\_ x -> x) headerBytes layout
 
     sectionOf (p, off) = HpcSection (pKind p) (pDType p) (pChar p) (pRows p) (pCols p)
                            (fromIntegral off) (fromIntegral (BL.length (pPayload p)))
@@ -175,6 +179,7 @@ readHpcInfo bs
   | BL.take 8 bs /= hpcMagic = Left "firma TAXIHPC1 inválida"
   | u32 12 /= 0x01020304 = Left "marca de endianness inválida"
   | BL.length bs /= fromIntegral (u64 56) = Left "longitud total no coincide con la cabecera"
+  | 64 + 64 * fromIntegral (u64 40) > BL.length bs = Left "tabla de secciones excede la longitud del contenedor"
   | otherwise = Right HpcInfo
       { hiTaxa = u64 24
       , hiChars = u64 32
@@ -183,7 +188,10 @@ readHpcInfo bs
       , hiSections = [ section (64 + 64 * i) | i <- [0 .. fromIntegral (u64 40) - 1] ]
       }
   where
-    byte i = fromIntegral (BL.index bs (fromIntegral (i :: Int))) :: Word64
+    byte i =
+      case BL.unpack (BL.take 1 (BL.drop (fromIntegral (i :: Int)) bs)) of
+        (w : _) -> fromIntegral w :: Word64
+        []      -> 0
     u32 o = fromIntegral (foldr (\k acc -> (acc `shiftL` 8) .|. byte (o + k)) 0 [0 .. 3]) :: Word32
     u64 o = foldr (\k acc -> (acc `shiftL` 8) .|. byte (o + k)) 0 [0 .. 7]
     section o = HpcSection
