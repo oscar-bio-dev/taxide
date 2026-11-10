@@ -27,7 +27,7 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.Text.IO as TIO
 import Numeric (showFFloat)
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, doesFileExist, getHomeDirectory)
+import System.Directory (doesFileExist)
 import System.Exit (exitFailure, exitSuccess)
 import System.FilePath (takeDirectory, takeFileName, (</>))
 import System.IO (hPutStrLn, stderr)
