@@ -51,10 +51,6 @@ import Taxide.Engine.Discretize (quantitativeRange)
 import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..))
 import Taxide.Export.Common
 
--- | Idioma de la prosa generada.
-data Lang = LangEn | LangEs
-  deriving (Eq, Show)
-
 -- | Opciones de síntesis.
 data NaturalOptions = NaturalOptions
   { noLang         :: !Lang   -- ^ Idioma de las partículas de enlace
@@ -106,15 +102,16 @@ describeTaxa opts ctx = go Nothing (ecTaxa ctx)
   where
     go _ [] = []
     go lastPrimary (t : rest) =
-      let parent = case rtType t of
+      let clean = stripDeltaComments (rtName t)
+          parent = case rtType t of
             VariantItem -> lastPrimary
             PrimaryItem -> Nothing
           lastPrimary' = case rtType t of
-            PrimaryItem -> Just (rtName t)
+            PrimaryItem -> Just clean
             VariantItem -> lastPrimary
       in NaturalTaxon
            { ntIndex     = rtIndex t
-           , ntName      = rtName t
+           , ntName      = clean
            , ntAuthority = rtAuthority t
            , ntVariantOf = parent
            , ntSections  = describeSections opts ctx t

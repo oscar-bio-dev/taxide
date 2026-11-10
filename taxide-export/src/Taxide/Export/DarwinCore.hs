@@ -19,8 +19,11 @@ module Taxide.Export.DarwinCore
   , defaultDwcOptions
   , DwcTaxon (..)
   , dwcTaxa
+  , dwcTaxaWithOpts
   , dwcTaxonTxt
+  , dwcTaxonTxtWithOpts
   , dwcMeasurementTxt
+  , dwcMeasurementTxtWithOpts
   , dwcDescriptionTxt
   , dwcMetaXml
   , dwcEmlXml
@@ -49,8 +52,7 @@ import Taxide.Engine.Discretize (quantitativeRange)
 import Taxide.Engine.Variants (AttrOrigin (..), AttributedState (..), ResolvedTaxon (..))
 import Taxide.Export.Common
 import Taxide.Export.Natural
-  ( Lang (..)
-  , NaturalOptions (..)
+  ( NaturalOptions (..)
   , describeTaxa
   , defaultNaturalOptions
   , plainDescription
@@ -84,40 +86,53 @@ dwcEpoch = 315532800
 -- Núcleo taxonómico
 --------------------------------------------------------------------------------
 
--- | Filas del núcleo con claves únicas y estables derivadas del nombre.
-dwcTaxa :: ExportContext -> [DwcTaxon]
-dwcTaxa ctx = snd (mapAccumL step (Map.empty, Nothing) (ecTaxa ctx))
+-- | Filas del núcleo con claves únicas y estables derivadas del nombre y opciones de idioma.
+dwcTaxaWithOpts :: DwcOptions -> ExportContext -> [DwcTaxon]
+dwcTaxaWithOpts opts ctx = snd (mapAccumL step (Map.empty, Nothing) (ecTaxa ctx))
   where
+    lang = noLang (dwcNatural opts)
     step (seen, lastPrimary) t =
-      let base = slugify (rtName t)
+      let cleanName = stripDeltaComments (rtName t)
+          base = slugify cleanName
           n = Map.findWithDefault (0 :: Int) base seen
           ident = if n == 0 then base else base <> "-" <> T.pack (show (n + 1))
           seen' = Map.insertWith (+) base 1 seen
-          rank = rankOf (rtName t)
+          rank = rankOf cleanName
           (parentId, remarks) = case rtType t of
             PrimaryItem -> ("", "")
             VariantItem -> case lastPrimary of
               Nothing ->
-                ("", "DELTA variant item (#+) without a preceding primary item.")
+                ("", case lang of
+                       LangEs -> "Ítem variante DELTA (#+) sin ítem principal precedente."
+                       LangEn -> "DELTA variant item (#+) without a preceding primary item.")
               Just (pid, pname)
                 | T.null rank ->
-                    (pid, "DELTA variant item (#+) of '" <> pname
-                          <> "'; its nature (sex, morph, form, etc.) is not specified.")
+                    (pid, case lang of
+                            LangEs -> "Ítem variante DELTA (#+) de '" <> pname
+                                  <> "'; su naturaleza (sexo, morfo, forma, etc.) no está especificada."
+                            LangEn -> "DELTA variant item (#+) of '" <> pname
+                                  <> "'; its nature (sex, morph, form, etc.) is not specified.")
                 | otherwise ->
-                    (pid, "DELTA variant item (#+) of '" <> pname <> "'.")
+                    (pid, case lang of
+                            LangEs -> "Ítem variante DELTA (#+) de '" <> pname <> "'."
+                            LangEn -> "DELTA variant item (#+) of '" <> pname <> "'.")
           lastPrimary' = case rtType t of
-            PrimaryItem -> Just (ident, rtName t)
+            PrimaryItem -> Just (ident, cleanName)
             VariantItem -> lastPrimary
           row = DwcTaxon
             { dtIndex     = rtIndex t
             , dtId        = ident
-            , dtName      = rtName t
+            , dtName      = cleanName
             , dtAuthority = maybe "" id (rtAuthority t)
             , dtRank      = rank
             , dtParentId  = parentId
             , dtRemarks   = remarks
             }
       in ((seen', lastPrimary'), row)
+
+-- | Filas del núcleo con claves únicas (en inglés por defecto para compatibilidad).
+dwcTaxa :: ExportContext -> [DwcTaxon]
+dwcTaxa = dwcTaxaWithOpts defaultDwcOptions
 
 -- | Rango infraespecífico, sólo si el nombre contiene un marcador explícito.
 rankOf :: Text -> Text
@@ -138,18 +153,23 @@ rankOf name = case mapMaybe marker (T.words name) of
 tsv :: [Text] -> [[Text]] -> Text
 tsv header rows = T.unlines (map (T.intercalate "\t" . map tsvField) (header : rows))
 
--- | @taxon.txt@: núcleo @dwc:Taxon@.
-dwcTaxonTxt :: ExportContext -> Text
-dwcTaxonTxt ctx = tsv
+-- | @taxon.txt@: núcleo @dwc:Taxon@ con opciones de idioma.
+dwcTaxonTxtWithOpts :: DwcOptions -> ExportContext -> Text
+dwcTaxonTxtWithOpts opts ctx = tsv
   ["taxonID", "scientificName", "scientificNameAuthorship", "taxonRank", "parentNameUsageID", "taxonRemarks"]
-  [ [dtId d, dtName d, dtAuthority d, dtRank d, dtParentId d, dtRemarks d] | d <- dwcTaxa ctx ]
+  [ [dtId d, dtName d, dtAuthority d, dtRank d, dtParentId d, dtRemarks d] | d <- dwcTaxaWithOpts opts ctx ]
 
--- | @measurementorfact.txt@: una fila por celda informativa (excluye @U@ y @-@).
-dwcMeasurementTxt :: ExportContext -> Text
-dwcMeasurementTxt ctx = tsv
+-- | @taxon.txt@: núcleo @dwc:Taxon@ (en inglés por defecto).
+dwcTaxonTxt :: ExportContext -> Text
+dwcTaxonTxt = dwcTaxonTxtWithOpts defaultDwcOptions
+
+-- | @measurementorfact.txt@: una fila por celda informativa (excluye @U@ y @-@), bilingüe.
+dwcMeasurementTxtWithOpts :: DwcOptions -> ExportContext -> Text
+dwcMeasurementTxtWithOpts opts ctx = tsv
   ["coreid", "measurementType", "measurementValue", "measurementUnit", "measurementRemarks"]
-  (concat (zipWith rowsFor (dwcTaxa ctx) (ecTaxa ctx)))
+  (concat (zipWith rowsFor (dwcTaxaWithOpts opts ctx) (ecTaxa ctx)))
   where
+    lang = noLang (dwcNatural opts)
     rowsFor d t =
       [ [dtId d, ctxFeature ctx cid, value, unit, T.intercalate "; " remarks]
       | (cid, as) <- Map.toAscList (rtAttributes t)
@@ -165,8 +185,12 @@ dwcMeasurementTxt ctx = tsv
           let labels = [ctxStateLabel ctx cid s | s <- exprStates expr]
               kindRemark = case exprKind expr of
                 VkSingle      -> []
-                VkPolymorphic -> ["polymorphism (simultaneous states, &)"]
-                VkUncertain   -> ["uncertainty (alternative states, /)"]
+                VkPolymorphic -> case lang of
+                  LangEs -> ["polimorfismo (estados simultáneos, &)"]
+                  LangEn -> ["polymorphism (simultaneous states, &)"]
+                VkUncertain   -> case lang of
+                  LangEs -> ["incertidumbre (estados alternativos, /)"]
+                  LangEn -> ["uncertainty (alternative states, /)"]
           in Just (T.intercalate " | " labels, "", kindRemark ++ exprComments expr ++ commentRemark mc ++ originRemark origin)
       AttrInteger mc _ -> numeric cid raw Nothing mc origin
       AttrReal mc _ u  -> numeric cid raw u mc origin
@@ -174,7 +198,7 @@ dwcMeasurementTxt ctx = tsv
 
     numeric cid raw mUnit mc origin = do
       sr <- quantitativeRange raw
-      let (main, extra) = fmtStatRange sr
+      let (main, extra) = fmtStatRangeLang lang sr
           unit = case mUnit of
             Just u | not (T.null (T.strip u)) -> T.strip u
             _ -> maybe "" id (ctxUnits ctx cid)
@@ -182,10 +206,20 @@ dwcMeasurementTxt ctx = tsv
 
     commentRemark = maybe [] pure
     originRemark o = case o of
-      OriginInherited p           -> ["inherited from '" <> p <> "'"]
-      OriginImplicitOmitted _     -> ["implicit value (*IMPLICIT VALUES)"]
-      OriginImplicitUnspecified _ -> ["implicit value (*IMPLICIT VALUES)"]
-      _                           -> []
+      OriginInherited p -> case lang of
+        LangEs -> ["heredado de '" <> stripDeltaComments p <> "'"]
+        LangEn -> ["inherited from '" <> stripDeltaComments p <> "'"]
+      OriginImplicitOmitted _ -> case lang of
+        LangEs -> ["valor implícito (*IMPLICIT VALUES)"]
+        LangEn -> ["implicit value (*IMPLICIT VALUES)"]
+      OriginImplicitUnspecified _ -> case lang of
+        LangEs -> ["valor implícito (*IMPLICIT VALUES)"]
+        LangEn -> ["implicit value (*IMPLICIT VALUES)"]
+      _ -> []
+
+-- | @measurementorfact.txt@: una fila por celda informativa (en inglés por defecto).
+dwcMeasurementTxt :: ExportContext -> Text
+dwcMeasurementTxt = dwcMeasurementTxtWithOpts defaultDwcOptions
 
 -- | @description.txt@: prosa morfológica y caracteres @TE@.
 dwcDescriptionTxt :: DwcOptions -> ExportContext -> Text
@@ -304,8 +338,8 @@ dwcEmlXml lang meta = T.unlines $
 -- | Las cinco entradas del esquema en estrella, en orden fijo.
 dwcFiles :: DwcOptions -> ExportContext -> [(FilePath, Text)]
 dwcFiles opts ctx =
-  [ ("taxon.txt", dwcTaxonTxt ctx)
-  , ("measurementorfact.txt", dwcMeasurementTxt ctx)
+  [ ("taxon.txt", dwcTaxonTxtWithOpts opts ctx)
+  , ("measurementorfact.txt", dwcMeasurementTxtWithOpts opts ctx)
   , ("description.txt", dwcDescriptionTxt opts ctx)
   , ("meta.xml", dwcMetaXml)
   , ("eml.xml", dwcEmlXml (noLang (dwcNatural opts)) (ecMetadata ctx))

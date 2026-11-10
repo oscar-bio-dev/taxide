@@ -19,6 +19,9 @@ module Taxide.Export.Common
     ExportError (..)
   , renderExportError
 
+    -- * Idioma
+  , Lang (..)
+
     -- * Contexto de exportación
   , ExportContext (..)
   , mkExportContext
@@ -44,6 +47,9 @@ module Taxide.Export.Common
     -- * Utilidades de formato
   , fmtNum
   , fmtStatRange
+  , fmtStatRangeLang
+  , stripDeltaComments
+  , formatDeltaCommentsAsParens
   , escapeXml
   , escapeHtml
   , capitalizeFirst
@@ -102,6 +108,14 @@ renderExportError :: ExportError -> Text
 renderExportError (ExportError msg) = msg
 
 --------------------------------------------------------------------------------
+-- Idioma
+--------------------------------------------------------------------------------
+
+-- | Idioma de la prosa y observaciones generadas.
+data Lang = LangEn | LangEs
+  deriving (Eq, Show)
+
+--------------------------------------------------------------------------------
 -- Contexto de exportación
 --------------------------------------------------------------------------------
 
@@ -147,14 +161,14 @@ ctxCharType ctx cid =
 ctxFeature :: ExportContext -> Int -> Text
 ctxFeature ctx cid =
   case ctxCharDef ctx cid of
-    Just c | not (T.null (T.strip (charFeature c))) -> T.strip (charFeature c)
+    Just c | not (T.null (T.strip (charFeature c))) -> formatDeltaCommentsAsParens (charFeature c)
     _ -> "character " <> T.pack (show cid)
 
 -- | Etiqueta textual de un estado (con respaldo @state N@).
 ctxStateLabel :: ExportContext -> Int -> StateId -> Text
 ctxStateLabel ctx cid s =
   case ctxCharDef ctx cid >>= lookup s . charStates of
-    Just lbl | not (T.null (T.strip lbl)) -> T.strip lbl
+    Just lbl | not (T.null (T.strip lbl)) -> formatDeltaCommentsAsParens lbl
     _ -> "state " <> T.pack (show s)
 
 -- | Unidades dimensionales declaradas en CHARS.
@@ -329,20 +343,69 @@ fmtNum d
           trimmed = T.dropWhileEnd (== '0') raw
       in if T.isSuffixOf "." trimmed then T.dropEnd 1 trimmed else trimmed
 
--- | Rango normal @n1-n2@ (o @n@), con valor central y extremos absolutos
--- opcionales. Devuelve el valor principal y las observaciones asociadas.
-fmtStatRange :: StatRange Double -> (Text, [Text])
-fmtStatRange sr =
+-- | Rango normal con etiquetas en el idioma indicado ('LangEs' o 'LangEn').
+fmtStatRangeLang :: Lang -> StatRange Double -> (Text, [Text])
+fmtStatRangeLang lang sr =
   let lo = srNormalMin sr
       hi = srNormalMax sr
       main = if lo == hi then fmtNum lo else fmtNum lo <> "-" <> fmtNum hi
-      centre = maybe [] (\c -> ["centre " <> fmtNum c]) (srCenterVal sr)
+      centreLabel = case lang of
+        LangEs -> "centro "
+        LangEn -> "centre "
+      centre = maybe [] (\c -> [centreLabel <> fmtNum c]) (srCenterVal sr)
       extremes = case (srAbsoluteMin sr, srAbsoluteMax sr) of
         (Nothing, Nothing) -> []
-        (Just a, Just b)  -> [ "extremes " <> fmtNum a <> "-" <> fmtNum b ]
-        (Just a, Nothing) -> [ "minimum " <> fmtNum a ]
-        (Nothing, Just b) -> [ "maximum " <> fmtNum b ]
+        (Just a, Just b) -> case lang of
+          LangEs -> [ "extremos " <> fmtNum a <> "-" <> fmtNum b ]
+          LangEn -> [ "extremes " <> fmtNum a <> "-" <> fmtNum b ]
+        (Just a, Nothing) -> case lang of
+          LangEs -> [ "mínimo " <> fmtNum a ]
+          LangEn -> [ "minimum " <> fmtNum a ]
+        (Nothing, Just b) -> case lang of
+          LangEs -> [ "máximo " <> fmtNum b ]
+          LangEn -> [ "maximum " <> fmtNum b ]
   in (main, centre ++ extremes)
+
+-- | Rango normal @n1-n2@ (o @n@), con valor central y extremos absolutos
+-- opcionales. Devuelve el valor principal y las observaciones asociadas (en inglés por defecto).
+fmtStatRange :: StatRange Double -> (Text, [Text])
+fmtStatRange = fmtStatRangeLang LangEn
+
+-- | Elimina comentarios angulares DELTA (<...>, incluidos bloques anidados) y normaliza espacios.
+stripDeltaComments :: Text -> Text
+stripDeltaComments = normalizeSpaces . go (0 :: Int) . T.unpack
+  where
+    go _ [] = []
+    go depth ('<':cs) = go (depth + 1) cs
+    go depth ('>':cs)
+      | depth > 0     = go (depth - 1) cs
+      | otherwise     = go 0 cs
+    go depth (c:cs)
+      | depth > 0     = go depth cs
+      | otherwise     = c : go depth cs
+    normalizeSpaces = T.unwords . filter (not . T.null) . T.words . T.pack
+
+-- | Convierte comentarios angulares DELTA (<...>) en anotaciones entre paréntesis (...),
+-- asegurando un espacio previo si no lo hay y convirtiendo niveles anidados en corchetes [...].
+formatDeltaCommentsAsParens :: Text -> Text
+formatDeltaCommentsAsParens txt
+  | T.null (T.strip txt) = ""
+  | otherwise = normalizeSpaces (T.pack (go True (0 :: Int) (T.unpack (T.strip txt))))
+  where
+    go _ _ [] = []
+    go atStart depth ('<':cs) =
+      let openCh = if depth == 0 then '(' else '['
+          prefix = if atStart || depth > 0 then [openCh] else [' ', openCh]
+      in prefix ++ go True (depth + 1) cs
+    go _ depth ('>':cs)
+      | depth > 0 =
+          let closeCh = if depth == 1 then ')' else ']'
+          in closeCh : go False (depth - 1) cs
+      | otherwise = go False 0 cs
+    go _ depth (c:cs)
+      | isSpace c = c : go True depth cs
+      | otherwise = c : go False depth cs
+    normalizeSpaces = T.unwords . filter (not . T.null) . T.words
 
 -- | Escape de los cinco caracteres reservados de XML.
 escapeXml :: Text -> Text

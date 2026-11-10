@@ -63,7 +63,7 @@ jsonValue ctx = object
       , "geometry"   .= Null
       , "properties" .= object
           [ "index"     .= rtIndex t
-          , "name"      .= rtName t
+          , "name"      .= stripDeltaComments (rtName t)
           , "authority" .= rtAuthority t
           , "rank"      .= nullIfEmpty (dtRank d)
           , "item_type" .= (case rtType t of
@@ -92,10 +92,10 @@ charValue :: CharacterDef -> Value
 charValue c = object
   [ "id"      .= charNumber c
   , "type"    .= show (charType c)
-  , "feature" .= charFeature c
-  , "heading" .= charHeading c
+  , "feature" .= formatDeltaCommentsAsParens (charFeature c)
+  , "heading" .= fmap formatDeltaCommentsAsParens (charHeading c)
   , "units"   .= charUnits c
-  , "states"  .= [ object ["id" .= s, "label" .= l] | (s, l) <- charStates c ]
+  , "states"  .= [ object ["id" .= s, "label" .= formatDeltaCommentsAsParens l] | (s, l) <- charStates c ]
   ]
 
 attributeValue :: ExportContext -> Int -> AttributedState -> Value
@@ -155,7 +155,7 @@ attributeValue ctx cid (AttributedState raw origin) = object $
 
     originText o = case o of
       OriginExplicit                -> "explicit"
-      OriginInherited p             -> "inherited:" <> p
+      OriginInherited p             -> "inherited:" <> stripDeltaComments p
       OriginImplicitOmitted _       -> "implicit_omitted"
       OriginImplicitUnspecified _   -> "implicit_unspecified"
       OriginInapplicableDependency c -> "inapplicable_dependency:" <> T.pack (show c)

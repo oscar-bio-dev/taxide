@@ -51,7 +51,7 @@ renderNexus opts ctx
   where
     cols = buildCladColumns (nexMethod opts) (nexTarget opts) ctx
     taxa = ecTaxa ctx
-    names = map rtName taxa
+    names = map (stripDeltaComments . rtName) taxa
     maxStates = maximum (map (length . ccStateLabels) cols)
     symbols = take (max 2 maxStates) stateSymbolsNexus
     symbolsVec = VU.fromList symbols

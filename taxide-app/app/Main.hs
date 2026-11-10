@@ -275,14 +275,14 @@ textOption = optional . strOption
 compileOptsParser :: Parser CompileOpts
 compileOptsParser = CompileOpts
   <$> inputPathsParser
-  <*> option targetReader (long "target" <> short 't' <> metavar "TARGET"
+  <*> option targetReader (long "target" <> short 't' <> long "format" <> short 'f' <> metavar "TARGET"
                            <> help "Formato de salida: nexus|tnt|natural|dwca|json|hdf5")
   <*> optional (strOption (long "output" <> short 'o' <> metavar "FILE"
                            <> help "Archivo de salida (obligatorio para dwca y hdf5)"))
-  <*> option natFormatReader (long "format" <> metavar "md|html" <> value FmtMarkdown
+  <*> option natFormatReader (long "natural-format" <> long "style" <> metavar "md|html" <> value FmtMarkdown
                               <> help "Formato del objetivo natural (por defecto md)")
-  <*> option natLangReader (long "lang" <> metavar "en|es" <> value Taxide.Export.Natural.LangEn
-                            <> help "Idioma de la prosa (por defecto en)")
+  <*> option natLangReader (long "lang" <> short 'l' <> metavar "en|es" <> value Taxide.Export.Natural.LangEn
+                            <> help "Idioma de la prosa y observaciones (por defecto en)")
   <*> option discretizeReader (long "discretize" <> metavar "sqrt|sturges|N" <> value SquareRootRule
                                <> help "Regla para discretizar IN/RN a OM (por defecto sqrt)")
   <*> option discTargetReader (long "discretize-value" <> metavar "center|midpoint" <> value UseCenterVal
@@ -305,7 +305,7 @@ describeOptsParser = DescribeOpts
   <$> inputPathsParser
   <*> optional (strOption (long "output" <> short 'o' <> metavar "FILE" <> help "Archivo de salida"))
   <*> option natFormatReader (long "format" <> metavar "md|html" <> value FmtMarkdown <> help "Formato (md|html)")
-  <*> option natLangReader (long "lang" <> metavar "en|es" <> value Taxide.Export.Natural.LangEs <> help "Idioma (en|es)")
+  <*> option natLangReader (long "lang" <> short 'l' <> metavar "en|es" <> value Taxide.Export.Natural.LangEs <> help "Idioma (en|es)")
   <*> switch (long "omit-implicit" <> help "Omite valores implícitos")
   <*> switch (long "no-units" <> help "No inserta unidades")
   <*> switch (long "no-text" <> help "No incluye caracteres TE")
@@ -345,8 +345,8 @@ treeOptsParser = TreeOpts
         ( long "method" <> metavar "parsimony|upgma|nj" <> value MethodParsimony <> showDefault
        <> help "Método analítico de reconstrucción" )
   <*> option searchReader
-        ( long "search" <> metavar "wagner|spr|tbr" <> value SearchSPR <> showDefault
-       <> help "Estrategia de búsqueda topológica para parsimonia" )
+        ( long "search" <> long "swap" <> metavar "wagner|spr|tbr" <> value SearchSPR <> showDefault
+       <> help "Estrategia de búsqueda topológica para parsimonia (wagner|spr|tbr)" )
   <*> option discretizeReader
         ( long "discretize" <> metavar "sqrt|sturges|N" <> value SquareRootRule
        <> help "Regla de discretización para IN/RN" )
@@ -381,7 +381,7 @@ keyOptsParser = KeyOpts
        <> value FmtKeyBracketed <> showDefault
        <> help "Estilo de la clave dicotómica" )
   <*> option keyLangReader
-        ( long "lang" <> metavar "en|es" <> value Taxide.Engine.Key.LangEn <> showDefault
+        ( long "lang" <> short 'l' <> metavar "en|es" <> value Taxide.Engine.Key.LangEn <> showDefault
        <> help "Idioma de encabezados y enlaces" )
   <*> optional (strOption (long "output" <> short 'o' <> metavar "FILE" <> help "Archivo de salida"))
   <*> switch (long "force" <> help "Genera la clave aunque el linter reporte errores")

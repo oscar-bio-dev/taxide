@@ -38,8 +38,23 @@ import Taxide.Core.Types
 import Taxide.Engine.Matrix (ColumnarMatrix (..))
 import Taxide.Engine.Pipeline (runPipelinePure)
 import Taxide.Export.BinaryHPC (HpcInfo (..), HpcSection (..), hpcAlignment, readHpcInfo, renderHpcBinary)
-import Taxide.Export.Common (ExportContext (..), mkExportContext, quoteNexus, sanitizeToken)
-import Taxide.Export.DarwinCore (defaultDwcOptions, dwcFiles, renderDwcArchive)
+import Taxide.Export.Common
+  ( ExportContext (..)
+  , Lang (..)
+  , formatDeltaCommentsAsParens
+  , mkExportContext
+  , quoteNexus
+  , sanitizeToken
+  , stripDeltaComments
+  )
+import Taxide.Export.DarwinCore
+  ( DwcOptions (..)
+  , defaultDwcOptions
+  , dwcFiles
+  , dwcMeasurementTxtWithOpts
+  , dwcTaxonTxtWithOpts
+  , renderDwcArchive
+  )
 import Taxide.Export.Json (renderJson)
 import Taxide.Export.Natural
   ( NaturalOptions (..)
@@ -287,6 +302,24 @@ dwcaTests = testGroup "Darwin Core Archive"
         , "http://rs.tdwg.org/dwc/terms/parentNameUsageID" ]
       assertBool "título escapado en EML" ("Prueba &lt;TAXIDE&gt; &amp; co" `T.isInfixOf` eml)
       assertBool "licencia" ("CC-BY" `T.isInfixOf` eml)
+
+  , testCase "limpieza de comentarios DELTA y formateo como paréntesis" $ do
+      stripDeltaComments "Allolobophora chlorotica <Savigny, 1826>" @?= "Allolobophora chlorotica"
+      stripDeltaComments "#+ Bimastos rubidus f. tenuis <Eisen, 1874>" @?= "#+ Bimastos rubidus f. tenuis"
+      formatDeltaCommentsAsParens "no pigmentada<blanquecina, rosácea o gris clara>"
+        @?= "no pigmentada (blanquecina, rosácea o gris clara)"
+      formatDeltaCommentsAsParens "<nota <anidada>> texto" @?= "(nota [anidada]) texto"
+
+  , testCase "DwC-A bilingüe: soporte de LangEs en taxonRemarks y measurementorfact" $ do
+      let esOpts = DwcOptions defaultNaturalOptions { noLang = LangEs }
+          mofEs = dwcMeasurementTxtWithOpts esOpts mkCtx
+          taxEs = dwcTaxonTxtWithOpts esOpts mkCtx
+          archEs = Zip.toArchive (renderDwcArchive esOpts mkCtx)
+      assertBool "polimorfismo en español" ("polimorfismo (estados simultáneos, &)" `T.isInfixOf` mofEs)
+      assertBool "incertidumbre en español" ("incertidumbre (estados alternativos, /)" `T.isInfixOf` mofEs)
+      assertBool "variante en español en taxonRemarks" ("Ítem variante DELTA (#+)" `T.isInfixOf` taxEs)
+      mofZip <- maybe (assertFailure "falta measurementorfact.txt") pure (zipText archEs "measurementorfact.txt")
+      mofZip @?= mofEs
   ]
 
 jsonTests :: TestTree

@@ -52,7 +52,7 @@ renderTnt opts ctx
   where
     cols = buildCladColumns (tntMethod opts) (tntTarget opts) ctx
     taxa = ecTaxa ctx
-    names = map (sanitizeToken . rtName) taxa
+    names = map (sanitizeToken . stripDeltaComments . rtName) taxa
     maxStates = maximum (map (length . ccStateLabels) cols)
 
     prelude = [ "nstates 32;" ]
