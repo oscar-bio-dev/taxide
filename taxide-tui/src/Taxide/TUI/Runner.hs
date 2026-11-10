@@ -19,6 +19,7 @@ module Taxide.TUI.Runner
   , runTaxideTUI
   , runTaxideTUIFiles
   , scratchDataset
+  , ensureDefaultWorkspaceDir
 
     -- * Reexportaciones para Pruebas Headless
   , initAppState
@@ -33,9 +34,10 @@ import Brick (App (..), defaultMain, getVtyHandle, modify, neverShowCursor)
 import Control.Monad (void, when)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Graphics.Vty as Vty
-import System.Directory (doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist, getHomeDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, (</>))
 import System.IO (hPutStrLn, stderr)
@@ -102,22 +104,33 @@ scratchDataset = DeltaDataset
       ]
   }
 
+-- | Obtiene y asegura la existencia del directorio canónico de espacios de trabajo del usuario:
+-- @~/Documents/taxide-datasets@.
+ensureDefaultWorkspaceDir :: IO FilePath
+ensureDefaultWorkspaceDir = do
+  home <- getHomeDirectory
+  let wsDir = home </> "Documents" </> "taxide-datasets"
+  createDirectoryIfMissing True wsDir
+  pure wsDir
+
 -- | Inicia la interfaz interactiva de terminal a partir de rutas explícitas a
 -- los tres archivos cardinales DELTA. Si no existen archivos en el directorio
 -- especificado (por ejemplo, al ejecutar 'taxide' en una carpeta limpia sin
--- dataset previo), inicializa un espacio de trabajo en blanco en memoria.
+-- dataset previo), inicializa un espacio de trabajo en blanco en memoria alojado
+-- de forma segura en '~/Documents/taxide-datasets' para no ensuciar el repositorio.
 runTaxideTUIFiles :: FilePath -> FilePath -> FilePath -> IO ()
 runTaxideTUIFiles specsPath charsPath itemsPath = do
   sExists <- doesFileExist specsPath
   cExists <- doesFileExist charsPath
   iExists <- doesFileExist itemsPath
+  defaultWsDir <- ensureDefaultWorkspaceDir
   let baseDir = takeDirectory specsPath
-      dirForSave = if null baseDir || baseDir == "." then "." else baseDir
 
   if not (sExists || cExists || iExists)
     then do
-      let st0 = (initAppState dirForSave scratchDataset)
-            { asStatusMsg = "Nuevo espacio de trabajo en blanco — Use ':add <taxón>' para añadir especies, 'i' para editar, ':w' para guardar en disco."
+      let dirForSave = if null baseDir || baseDir == "." then defaultWsDir else baseDir
+          st0 = (initAppState dirForSave scratchDataset)
+            { asStatusMsg = "Nuevo espacio de trabajo en blanco (" <> T.pack dirForSave <> ") — Use ':add <taxón>' para añadir especies, 'i' para editar, ':w' para guardar en disco."
             }
       void (defaultMain taxideBrickApp st0)
     else do
@@ -128,5 +141,6 @@ runTaxideTUIFiles specsPath charsPath itemsPath = do
           TIO.hPutStrLn stderr err
           exitFailure
         Right ds -> do
-          let st0 = initAppState dirForSave ds
+          let dirForSave = if null baseDir || baseDir == "." then "." else baseDir
+              st0 = initAppState dirForSave ds
           void (defaultMain taxideBrickApp st0)

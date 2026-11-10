@@ -27,7 +27,7 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.Text.IO as TIO
 import Numeric (showFFloat)
 import Options.Applicative
-import System.Directory (doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist, getHomeDirectory)
 import System.Exit (exitFailure, exitSuccess)
 import System.FilePath (takeDirectory, takeFileName, (</>))
 import System.IO (hPutStrLn, stderr)
@@ -83,7 +83,7 @@ import Taxide.Export.Natural
   )
 import Taxide.Export.Nexus (NexusOptions (..), renderNexus)
 import Taxide.Export.TNT (TntOptions (..), renderTnt)
-import Taxide.TUI.Runner (runTaxideTUIFiles)
+import Taxide.TUI.Runner (ensureDefaultWorkspaceDir, runTaxideTUIFiles)
 
 -- | Subcomandos del ejecutable maestro 'taxide'.
 data Command
@@ -442,6 +442,8 @@ loadAndValidateDataset ip = do
 
 main :: IO ()
 main = do
+  -- Asegura automáticamente que exista el espacio de trabajo del usuario en Documents
+  _ <- ensureDefaultWorkspaceDir
   cmd <- execParser optsInfo
   case cmd of
     CmdTUI o      -> runTuiCmd o

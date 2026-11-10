@@ -139,3 +139,8 @@ user_data/
 scratch/
 projects/
 *.local/
+*.zip
+*.dwca
+*.tar.gz
+*.h5
+*.hdf5
